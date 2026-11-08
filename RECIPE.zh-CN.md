@@ -14,7 +14,7 @@ Herdr App 的一个侧栏：只把仍需要你关注的 agent 以卡片放在眼
 2. **卡片**（可滚动列表，内边距 8，间距 2）：每个既没 Settle、也不在工作的 agent 一张。卡片内边距 10/6，圆角 6，同 T3；是当前聚焦的 agent 时用 `selected` 背景，否则悬停时用 `hover` 背景。
    - 第 1 行（20px，12px `dim` 文字）：16px 的 space 标记（见下）、space 名，然后是右上角位。
    - 第 2 行：14px 标题。同 T3，聚焦、blocked 或 done 时醒目（`foreground`，中粗），否则退后（`muted`，常规）；悬停时只提亮颜色。
-   - 第 3 行，有内容才显示（12px `dim`）：分支，以及 "N sub-agents working"。
+   - 第 3 行，有内容才显示（12px `dim`）：分支，照 T3 从中间截断（`text_ellipsis_middle`）。照 T3 的侧栏，不提子 agent：它的状态已经合并了子 agent 的状态。
    - 标记：16px 程序图标，60% 不透明度；其他机器上的 agent 在它前面多一个 14px `dim` 的 server 图标，悬停显示机器名。有第 3 行时放在第 3 行末尾，否则放在第 2 行末尾，让标题独占一行。
    - 右上角位：blocked 显示 `Needs you`（琥珀色 `blocked`，14px `!` 徽章）；done 且还没看过显示 `Done`（绿色 `ansi2`，circle-check 图标）；否则显示距上次变化多久（`just now`、`5m`、`3h`、`2d`，同 T3，不计周）。
    - 为空时显示 "Nothing needs you."（还没有 agent 上报状态时显示 "No agent status yet…"）。
@@ -27,7 +27,7 @@ Herdr App 的一个侧栏：只把仍需要你关注的 agent 以卡片放在眼
 
 ## 它怎么表现
 
-- **状态。** `blocked`，或 `error`（失败结束的一轮，它自己或子 agent 的；`agents()` 没有这个状态，从 `terminals()` 读）显示 Needs you，并留在上方。其次是它自己的 `done`：回复在 Active 里显示 Done，旁边注明在跑的子 agent；读完后回到 Working，计时接着这轮的开始时间。`working`，或者在等工作中的子 agent，进入 Working 收纳区。`idle` 显示时间。规则写在 `mods/t3-inbox/tree.js`，与 Herdr T3 共用。
+- **状态。** `blocked`，或 `error`（失败结束的一轮，它自己或子 agent 的；`agents()` 没有这个状态，从 `terminals()` 读）显示 Needs you，并留在上方。其次是它自己的 `done`：回复在 Active 里显示 Done；读完后回到 Working，计时接着这轮的开始时间。`working`，或者在等工作中的子 agent，进入 Working 收纳区。`idle` 显示时间。规则写在 `mods/t3-inbox/tree.js`，与 Herdr T3 共用。
 - **排序。** 卡片按各自最近一次"回到你手上"的时间排（本 mod 看到的状态变化；在那之前用 core 的 `status_ms`）。Working 按本轮开始的时间排，Settled 按 Settle 的时间排；时间相同按 address，顺序不随数据到达的先后变化。查看卡片不改变顺序。停止工作的 agent 照 T3 在 Working 多留 2 秒，期间显示真实状态：这 2 秒内继续工作，或等你处理（blocked）后再继续，都保持原位；2 秒后排到卡片最上面。blocked 立即离开，置顶或已 Settle 的不留。agent 短暂从列表消失时保留位置，只有终端结束才删除记录。顺序传给 `setAgentOrder`，已 Settle 的排最后，所以 `agent.next` / `agent.prev` 按列表顺序走。
 - **点击**卡片或单行：对它执行 `agent.focus`（聚焦它的窗格；布局里有 agent 块时在那里显示它）。查看已 Settle 的 agent 不会让它回来。
 - **Settle。** 悬停在已结束的卡片上（整棵树里没有 working 或 blocked），右上角变成 `✓ Settle` 按钮；已置顶的也一样。和 T3 相同，Settle 立即取消置顶。写入失败时，置顶放回原来的位置，其间新加的置顶也保留。Undo 同样把置顶放回原位。Settle 当前聚焦的 agent 时，焦点移到下面一张卡片，到底则从顶部绕回，同 T3；Settle 后台的 agent 不改变焦点。按键命令 `t3-inbox.settle` 对当前查看的 agent 做同样的事（须已结束），已 Settle 的则取回到卡片最上方。Settle 按钮的悬停提示只在当前查看的卡片上写出这个键，因为键只作用于它；当前查看的已 Settle 行，撤销箭头的提示也写出它。

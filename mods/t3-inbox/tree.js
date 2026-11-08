@@ -14,11 +14,16 @@ export const kidStatus = (k, listed) => {
   return s === "error" ? "blocked" : s === "done" ? "idle" : s;
 };
 
-// Live sub-agents of `addr`, all the way down.
+// An agent, as agents() has them: its program reports a status, or the program table says it's one (before its first
+// report). A shell an agent started to run a command (`hc run --bg`) is a child terminal, not a sub-agent.
+export const isAgent = (k) => k.status != null || Boolean(k.program?.agent);
+
+// Live sub-agents of `addr`, all the way down; the walk goes on through what isn't one, so an agent a shell started counts.
 export function descendants(all, addr, seen = new Set()) {
   if (seen.has(addr)) return [];
   seen.add(addr);
-  return all.filter((k) => k.parent === addr && k.state === "live" && !seen.has(k.address)).flatMap((k) => [k, ...descendants(all, k.address, seen)]);
+  return all.filter((k) => k.parent === addr && k.state === "live" && !seen.has(k.address))
+    .flatMap((k) => [...(isAgent(k) ? [k] : []), ...descendants(all, k.address, seen)]);
 }
 
 // Its own word with what's under it: needing the person first, then its own done, then busy or waiting on

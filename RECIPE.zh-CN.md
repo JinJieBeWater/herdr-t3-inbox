@@ -23,7 +23,7 @@ Herdr App 的一个侧栏：只把仍需要你关注的 agent 以卡片放在眼
    - **Settled N** 标题，默认折叠；展开后以单行显示最近 Settle 的 10 个，下面是 `Show 25 more`。数字前的 `Clear` 按钮关闭已 Settle 的窗格（不含当前查看的 agent 及其所在 tab），关闭前通过自带的 `confirm` 对话框确认（`Close N terminals?`，和关闭标签一致；命令是 `t3-inbox.clear`）。空了的 tab 由 Herdr 关闭。space 不关：会被清空的 space 先在其终端当前所在目录新建一个 shell tab（`panes().cwd`，不用 space 的起始目录，否则没命名的 space 会被改名）（`tab.new`；`pane.close` 不能关 space 的最后一个窗格），之后切回你原来所在的 tab。会话由 agent 自己保存（`pi -r`、`claude -r`、`codex resume`）。
    - 单行：照 T3 36px，圆角 6，开头是 16px 的 space 标记，未聚焦或悬停时 40% 不透明度，然后是 `muted` 标题，右侧是 Settle 了多久。
 
-**Space 标记**，照 T3 Code 画项目的方式（`mods/t3-inbox/project.js`）：优先用项目自己的图标（圆角 25%），从 space 当前所在位置（第一个终端的目录，否则是创建时的目录）的仓库根目录查找：依次是 T3 的常见文件（`favicon.svg`、`public/favicon.ico`……`.idea/icon.svg`），然后是页面的 `<link rel="icon">` 或路由的 `{ rel: "icon", href }`。找到后复制到 App 目录的 `cache/t3-icons/`（图片只能从那里显示），并通过 `space.icons` 共享；找到的 10 分钟后重查，没找到的 1 分钟后重查。否则显示字母标记：名字的第一个字母或数字，转大写（`智能算量` → `智`），粗体等宽，大小是标记的 0.64，颜色由名字哈希到 T3 的 18 种颜色之一，底色是同色的 14% 淡色。没有可显示的字符时（`~`）显示文件夹。
+**Space 标记**，照 T3 Code 画项目的方式（`mods/t3-inbox/project.js`）：优先用项目自己的图标（圆角 25%），从 space 当前所在位置（第一个终端的目录，否则是创建时的目录）的仓库根目录查找：依次是 T3 的常见文件（`favicon.svg`、`public/favicon.ico`……`.idea/icon.svg`），然后是页面的 `<link rel="icon">` 或路由的 `{ rel: "icon", href }`。找到后复制到 App 目录的 `cache/t3-icons/`（图片只能从那里显示），并通过 `t3.spaceIcons` 共享；找到的 10 分钟后重查，没找到的 1 分钟后重查。否则显示字母标记：名字的第一个字母或数字，转大写（`智能算量` → `智`），粗体等宽，大小是标记的 0.64，颜色由名字哈希到 T3 的 18 种颜色之一，底色是同色的 14% 淡色。没有可显示的字符时（`~`）显示文件夹。
 
 ## 它怎么表现
 
@@ -31,13 +31,13 @@ Herdr App 的一个侧栏：只把仍需要你关注的 agent 以卡片放在眼
 - **排序。** 卡片按各自最近一次"回到你手上"的时间排（本 mod 看到的状态变化；在那之前用 core 的 `status_ms`）。Working 按本轮开始的时间排，Settled 按 Settle 的时间排；时间相同按 address，顺序不随数据到达的先后变化。查看卡片不改变顺序。停止工作的 agent 照 T3 在 Working 多留 2 秒，期间显示真实状态：这 2 秒内继续工作，或等你处理（blocked）后再继续，都保持原位；2 秒后排到卡片最上面。blocked 立即离开，置顶或已 Settle 的不留。agent 短暂从列表消失时保留位置，只有终端结束才删除记录。顺序传给 `setAgentOrder`，已 Settle 的排最后，所以 `agent.next` / `agent.prev` 按列表顺序走。
 - **点击**卡片或单行：对它执行 `agent.focus`（聚焦它的窗格；布局里有 agent 块时在那里显示它）。查看已 Settle 的 agent 不会让它回来。
 - **Settle。** 悬停在已结束的卡片上（整棵树里没有 working 或 blocked），右上角变成 `✓ Settle` 按钮；已置顶的也一样。和 T3 相同，Settle 立即取消置顶。写入失败时，置顶放回原来的位置，其间新加的置顶也保留。Undo 同样把置顶放回原位。Settle 当前聚焦的 agent 时，焦点移到下面一张卡片，到底则从顶部绕回，同 T3；Settle 后台的 agent 不改变焦点。按键命令 `t3-inbox.settle` 对当前查看的 agent 做同样的事（须已结束），已 Settle 的则取回到卡片最上方。Settle 按钮的悬停提示只在当前查看的卡片上写出这个键，因为键只作用于它；当前查看的已 Settle 行，撤销箭头的提示也写出它。
-- **Un-settle。** 悬停在单行上，时间变成撤销箭头（提示 `Un-settle`）；点击后 agent 回到卡片最上方。只有明确的取回才排到最上方：点这个箭头、拖出 Settled、对已 Settle 的 agent 按键。Undo 把 agent 放回原位。用别的方式清掉的 `settled` 标签，比如在另一个窗口点 Undo，也保持原位。Herdr T3 的标签栏用 `shared("t3-inbox.unsettled")` 报告它的按键取回（address → 每次取回都递增的戳），Inbox 把每个新戳当作一次取回。
+- **Un-settle。** 悬停在单行上，时间变成撤销箭头（提示 `Un-settle`）；点击后 agent 回到卡片最上方。只有明确的取回才排到最上方：点这个箭头、拖出 Settled、对已 Settle 的 agent 按键。Undo 把 agent 放回原位。用别的方式清掉的 `settled` 标签，比如在另一个窗口点 Undo，也保持原位。Herdr T3 的标签栏用 `shared("t3-tabs.unsettled")` 报告它的按键取回（address → 每次取回都递增的戳），Inbox 把每个新戳当作一次取回。
 - **撤销提示**，同 T3：Settle 和取消置顶会在第一个收纳区标题上方显示 `Settled 2 agents, Undo`，持续 5 秒（200ms 淡入淡出）。连续的同一操作合并计数；Undo 恢复原样，不算新动态。没有快捷键：⌘Z 留给终端。
 - **行详情**，同 T3 的线程卡片：悬停在卡片或单行上，在它右侧 4px 处从顶部弹出 `Popup`：标题，然后是 space、其他机器的名字、分支和程序，12px，最宽 320px。第一张等 150ms；已有一张显示中或关闭不足 400ms 时，下一张立即打开。第一张和最后一张有 150ms 淡入淡出。行内控件亮起、拖动或点击该行时隐藏。
 - **键盘**，照 T3 的 focus-visible（`focus.js`）：用 `pane.go` 移到 Inbox（`"focusable": true`）后进入键盘模式，Tab 走遍它的控件，当前控件有 2px `accent` 内描边；键盘落在卡片上时，卡片悬停才出现的控件也会出现；Enter 或 Space 触发。菜单支持 Home、End，没有搜索框的菜单还支持 T3 的字母 typeahead；搜索框里 Home、End 仍移动光标。键盘离开所有控件后退出该模式；鼠标操作不变。
 - **悬停标签**，同 T3 的 tooltip：每个纯图标控件和无文字标记都用 `HoverCard`（`tip.js`）说明自己，有绑定按键时一并显示。程序图标没有标签。
 - **动效**，同 T3：行的顺序或分区变化时，移动的行从原位滑过去（收纳区标题、Show more 和空状态那行也一起动，行不会从它们上面滑过），新行从上方 40px 或跟随上面保留的行淡入，离开的行在原位淡出；150ms ease-out，拖动中或一次超过 40 行时不做。放下的行从松手处滑过去。悬停行时，时间与 Settle 或撤销按钮交叉淡入淡出。
-- **拖动。** 照 T3：卡片或行移动 6px 即拿起。拿起期间 `Pinned` 和 `Active` 标签展开，副本跟着鼠标上下移动并标出松开后的动作（`Pin`、`Unpin`、`Settle`、`Un-settle`），列表在落点让出目标分区行高的间隙（原生 150ms `height` 过渡）；空的或折叠的分区显示虚线占位。拖到 Pinned 置顶（置顶卡片上半部或下半部：放在它上面或下面），拖到 Active 取消置顶并取消 Settle，拖到 Settled 即 Settle。按 Esc 或从左右两侧拖出放回原处；从上下边缘拖出则按标记落下（Herdr 不上报侧栏外的松手）；Working 卡片拿不起来。划选：按住 `✓ Settle` 或已 Settle 行的撤销箭头划过多行，一次 Settle 或取回整段。置顶卡片按置顶顺序留在顶部。置顶存在共享状态 `agents.pins`，与 Herdr T3 的 agents 列表共用。
+- **拖动。** 照 T3：卡片或行移动 6px 即拿起。拿起期间 `Pinned` 和 `Active` 标签展开，副本跟着鼠标上下移动并标出松开后的动作（`Pin`、`Unpin`、`Settle`、`Un-settle`），列表在落点让出目标分区行高的间隙（原生 150ms `height` 过渡）；空的或折叠的分区显示虚线占位。拖到 Pinned 置顶（置顶卡片上半部或下半部：放在它上面或下面），拖到 Active 取消置顶并取消 Settle，拖到 Settled 即 Settle。按 Esc 或从左右两侧拖出放回原处；从上下边缘拖出则按标记落下（Herdr 不上报侧栏外的松手）；Working 卡片拿不起来。划选：按住 `✓ Settle` 或已 Settle 行的撤销箭头划过多行，一次 Settle 或取回整段。置顶卡片按置顶顺序留在顶部。置顶存在共享状态 `t3.pins`，与 Herdr T3 的 agents 列表共用。
 - **新工作自动取消 Settle：**agent（或子 agent）变为 working 或 blocked，或 core 的 `turn` 计数超过 Settle 时记下的值。后者能发现没开窗口期间做过的工作。
 - **筛选。** 筛选按钮打开一个弹层（宽 260px，最高 360），带搜索框，列出 `All spaces` 和每个 space。单击只看那个 space；shift 单击加入或移除它，弹层保持打开。按屏幕记住。
 - **Search** 打开 props `picker` 指定的 mod，没有则打开自带的 `picker`；**New space** 执行 `space.new`；**New tab** 打开 props `newMenu` 指定的 mod，没有则打开自带的 `new-menu`。
@@ -49,7 +49,7 @@ Herdr App 的一个侧栏：只把仍需要你关注的 agent 以卡片放在眼
 ## 由什么构成
 
 - 一个 mod：`mods/t3-inbox/`（`main.js`、`name.js`（卡片标题：Pi 在跑时的 Pi 会话名、命名过的标签（子 agent 不用，标签里有另一个顶层 agent 时也不用）、有意义的终端标题，最后是程序名）、`tree.js`（状态规则）、`project.js`（space 标记）、`tip.js`（悬停标签）、`details.js`（行详情）；视图的状态和生命周期在 `main.js`，另有 `row-model.js`（每行的字段、顺序和收纳区，由纯数据算出）、`row-view.js`（卡片和单行）、`list-view.js`（列表和收纳区）、`actions.js`（Settle、Snooze、Undo）、`drag.js`、`snooze.js`（菜单、Custom 对话框和时间）、`filter.js`（顶栏和 space 筛选）、`sidebar.js`（Inbox 放在布局的 stack 里时，查找侧栏的布局节点）；`icons/`，`mod.json` 让它以 300px 停靠在 `left`）。可选 props `newMenu`：**New tab** 打开的 mod（Herdr T3 布局传 `t3-new-menu`）。`picker`：**Search** 打开的 mod（Herdr T3 布局传 `t3-picker`）。
-- `herdr`：`agents()`、`terminals()`（`labels`、`turn`、`status_ms`、`parent`、`state`）、`panes()`（分支、`cwd`）、`spaces()`、`run`（`agent.focus`、`pane.focus`、`space.new`、`mod.open`、`tab.new`、`pane.close`）、`openOverlay`（`confirm` 对话框）、`hc`、`exec`、`notify`、`theme`、`shared` / `setShared`（`agents.pins`、`space.icons`、`t3-inbox.rows`、`t3-inbox.unsettled`，以及 mod 的 `<mod>.program`、`.titles`、`.status`）、`keys`、`setAgentOrder`。
+- `herdr`：`agents()`、`terminals()`（`labels`、`turn`、`status_ms`、`parent`、`state`）、`panes()`（分支、`cwd`）、`spaces()`、`run`（`agent.focus`、`pane.focus`、`space.new`、`mod.open`、`tab.new`、`pane.close`）、`openOverlay`（`confirm` 对话框）、`hc`、`exec`、`notify`、`theme`、`shared` / `setShared`（`t3.pins`、`t3.spaceIcons`、`t3-inbox.rows`、`t3-tabs.unsettled`，以及 mod 的 `<mod>.program`、`.titles`、`.status`）、`keys`、`setAgentOrder`。
 - `gpui-base`：`Popover`、`Popup`、`HoverCard`、`InputState`、`Input`、`v_flex`、`h_flex`。
 - 运行的程序：`hc label`；为 space 标记，在 space 所在的机器上运行 `git rev-parse --show-toplevel`、`sh -c` 文件测试和 `base64`。
 - Settle 状态是 agent 终端上的 core 标签：`hc label <address> settled=<ms>:<turn>`；写 `settled=` 删除。终端结束，标签随之消失；所有 mod 和窗口都能读到。

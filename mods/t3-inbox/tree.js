@@ -8,10 +8,10 @@
 export const ownStatus = (word, address, all) => (all.find((k) => k.address === address)?.status === "error" ? "blocked" : word);
 
 // A sub-agent's own word: a sub-agent without a pane isn't in agents(), so its raw word, error counting as
-// blocked. It's never done: it reports to its parent, and the parent's done is the news.
+// blocked for aggregation. Keep done distinct from idle; only the parent's done is unread news.
 export const kidStatus = (k, listed) => {
-  const s = k.status === "error" ? "error" : listed.get(k.address) ?? k.status;
-  return s === "error" ? "blocked" : s === "done" ? "idle" : s;
+  const s = k.status ?? listed.get(k.address);
+  return s === "error" ? "blocked" : s;
 };
 
 // An agent, as agents() has them: its program reports a status, or the program table says it's one (before its first

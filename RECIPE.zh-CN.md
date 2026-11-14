@@ -11,7 +11,7 @@ Herdr App 的一个侧栏：只把仍需要你关注的 agent 以卡片放在眼
 从上到下，底色为主题的 `chrome`，正文 13px：
 
 1. **顶栏**（32px，左内边距 8，右 10）：一个宽的 `Search` 按钮（照 T3 搜索框 32px 高，16px 搜索图标 + "Search"，14px 中粗），然后是三个 26px 方形图标按钮：space 筛选（`list-filter.svg`；选了一个 space 时显示它的标记，选了多个时两个标记叠放）、New space（`folder-plus`）、New tab（`square-pen`）。
-2. **卡片**（可滚动列表，内边距 8，间距 2）：每个既没 Settle、也不在工作的 agent 一张。卡片内边距 10/6，圆角 6，同 T3；是当前聚焦的 agent 时用 `selected` 背景，否则悬停时用 `hover` 背景。
+2. **卡片**（可滚动列表，内边距 8，间距 2）：每个既没 Settle、也不在工作的 agent 一张。卡片内边距 8（T3 横向是 10；改 8 后状态的右边落在上方按钮下面），圆角 6 同 T3；是当前聚焦的 agent 时用 `selected` 背景，否则悬停时用 `hover` 背景。
    - 第 1 行（20px，12px `dim` 文字）：16px 的 space 标记（见下）、space 名，然后是右上角位。
    - 第 2 行：14px 标题。同 T3，聚焦、blocked 或 done 时醒目（`foreground`，中粗），否则退后（`muted`，常规）；悬停时只提亮颜色。
    - 第 3 行，有内容才显示（12px `dim`）：分支，照 T3 从中间截断（`text_ellipsis_middle`）。照 T3 的侧栏，不提子 agent：它的状态已经合并了子 agent 的状态。

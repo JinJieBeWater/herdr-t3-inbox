@@ -156,7 +156,7 @@ export function inboxList(view, t, model, actions, drag, draw, cx) {
     .when(dragging && others(rows).length === 0 && !(rows.length > 0 && !plan), (el) => el
       .child(plan?.gap === "head-settled" ? gap("head-settled") : placeholder("settled", "Settled")))
     .children(lane("settled", rows, (a) => slim(a), 0))
-    .when(view.open && put.length > view.limit, (el) => el.child(fly("m:more", "marker", stop(view, t, "settled-more", h_flex().id("settled-more").h(SLIM).px(10).gap(10).flex_none().items_center().rounded(6)
+    .when(view.open && put.length > view.limit, (el) => el.child(fly("m:more", "marker", stop(view, t, "settled-more", h_flex().id("settled-more").h(SLIM).px(8).gap(10).flex_none().items_center().rounded(6)
       .text_color(lit("settled-more", t.dim)).hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)).on_hover(glow(view, "settled-more"))
       .role("button").accessibility_label("Show more settled agents")
       .on_click((_e, cx) => {

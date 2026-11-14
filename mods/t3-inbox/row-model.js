@@ -1,4 +1,4 @@
-import { kidStatus, descendants, ownStatus, treeStatus } from "./tree.js";
+import { kidStatus, descendants, ownStatus, subAgents, treeStatus } from "./tree.js";
 
 // The settled tail opens on this many, then grows by MORE.
 export const FIRST = 10, MORE = 25;
@@ -82,7 +82,7 @@ export function inboxFields({ every, all, term, pending, changed, now, inView })
     return v ? v.split(":").map(Number) : null;
   };
   const listed = new Map(every.map((a) => [a.address, a.status]));
-  const kids = new Map(every.map((a) => [a.address, descendants(all, a.address).map((k) => kidStatus(k, listed))]));
+  const under = subAgents(every, all), kids = new Map(every.map((a) => [a.address, under(a.address)]));
   // It, or anything under it, is working or needs the person.
   const busy = (a) => BUSY.has(ownStatus(a.status, a.address, all)) || kids.get(a.address).some((s) => BUSY.has(s));
   // It with what's under it (tree.js).

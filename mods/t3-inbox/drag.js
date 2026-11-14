@@ -95,7 +95,7 @@ export function inboxDrag(view, t, model, actions) {
     .when(i === xs.length - 1, (el) => el.child(gap(`end-${section}`))));
   // T3's boundaries: Pinned and Active labels, shown only while dragging; the list opens room for them.
   const boundary = (id, text, section, to) => h_flex().id(id).flex_none().overflow_hidden().h(dragging ? 24 : 0)
-    .transition("height", MOTION).px(10).gap(8).items_center().text_size(12).font_medium()
+    .transition("height", MOTION).px(8).gap(8).items_center().text_size(12).font_medium()
     .on_mouse_move((_e, cx) => aim(to, cx))
     .when(dragging, (el) => el.child(div().text_color(hot(section) ? t.accent : t.muted).child(text))
       .child(div().flex_1().h(1).bg(hot(section) ? t.accent + "80" : t.border)));

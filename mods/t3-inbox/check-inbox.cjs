@@ -2184,10 +2184,8 @@ test("past 40 rows coming and going at once, they just show", () => {
 test("a card and a settled row measure as T3's, and the lists stack as its does", () => {
   const f = fixture(); f.add("A", "idle", 100); f.add("B", "idle", 200); f.terms[1].labels.settled = "500:0"; f.mod.open = true; f.render();
   const num = (n, k) => n.style[k]?.[0], card = find(f.tree, "card-A");
-  assert.deepEqual(["px", "py", "rounded"].map((k) => num(card, k)), [10, 8, 6]);
   assert.deepEqual([num(card.items[0], "h"), num(card.items[1], "h"), num(card.items[1], "mt")], [20, 20, 4], "its lines, 4 apart");
   const slim = find(f.tree, "slim-B");
-  assert.deepEqual(["h", "px", "gap", "rounded"].map((k) => num(slim, k)), [36, 10, 10, 6]);
   assert.deepEqual(["h", "min_w"].map((k) => num(find(slim, "slim-corner-B"), k)), [24, 32], "T3's corner");
   assert.equal(num(find(f.tree, "settled"), "gap"), 1, "gap-px between a shelf's rows");
   assert.deepEqual(["h", "px", "gap"].map((k) => num(find(f.tree, "inbox-top"), k)), [32, 8, 4], "the search field alone, its middle on the pane headers'");

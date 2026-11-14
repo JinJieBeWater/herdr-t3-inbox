@@ -3,6 +3,7 @@ import { v_flex, h_flex, Popover, Popup, Select, InputState, Input, NumberInput 
 import { run, theme, props, settings, closeOverlay } from "herdr";
 import { stopsInit, stop, focusRoot, onStop } from "./focus.js";
 import { menuJump } from "./list.js";
+import { menuRow, menuRule, menuHint } from "./menu-row.js";
 import { glow, tip } from "./tip.js";
 import { MOTION } from "./motion.js";
 import { presets } from "./snooze-presets.js";
@@ -272,21 +273,8 @@ export function snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick) 
           cx.notify();
         })
         .children(choices.flatMap((p, i) => [
-          ...(p.custom ? [div().h(1).mx(8).my(4).flex_none().bg(t.border)] : []),
-          h_flex().id(`snooze-${i}-${a.address}`).h(28).px(8).gap(8).flex_none().items_center().rounded(4)
-            .when(i === view.napAt, (row) => row.bg(t.selected))
-            .on_hover((on, cx) => {
-              const at = on ? i : view.napAt === i ? -1 : view.napAt;
-              if (at !== view.napAt) { view.napAt = at; cx.notify(); }
-            })
-            .role("button").accessibility_label(p.label)
-            .on_click((_e, cx) => {
-              cx.stop_propagation();
-              pick(a, p, cx);
-              cx.notify();
-            })
-            .child(div().flex_none().text_color(t.foreground).child(p.label))
-            .when(Boolean(p.when), (row) => row.child(div().flex_none().ml_auto().text_size(12).font_medium().text_color(t.dim).child(p.when))),
+          ...(p.custom ? [menuRule(t)] : []),
+          menuRow(view, t, `snooze-${i}-${a.address}`, { at: [view, "napAt", i], label: p.label, trail: p.when ? menuHint(t, p.when) : null, pick: (cx) => { pick(a, p, cx); cx.notify(); } }),
         ])));
     }), { delay, off: menu });
 }

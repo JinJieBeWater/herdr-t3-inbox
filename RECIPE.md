@@ -9,7 +9,7 @@ A sidebar for Herdr App that keeps only the agents still asking for your attenti
 Top to bottom, on the `chrome` theme background, 13px text:
 
 1. **Top row** (32px, left padding 8, right 10): a wide `Search` button (32px high as T3's search field, 16px search icon + "Search", 14px medium), then three 26px square icon buttons: space filter (`list-filter.svg`, or the chosen space's mark, two overlapping marks when several), New space (`folder-plus`), New tab (`square-pen`).
-2. **Cards** (scrolling list, padding 8, gap 2): one per agent that isn't settled and isn't working. Card: padding 10/6, radius 6, as T3's, `selected` background when it is the focused agent, `hover` background otherwise on hover.
+2. **Cards** (scrolling list, padding 8, gap 2): one per agent that isn't settled and isn't working. Card: padding 8 (T3's is 10 across, so its status ends under the buttons above), radius 6 as T3's, `selected` background when it is the focused agent, `hover` background otherwise on hover.
    - Line 1 (20px, 12px `dim` text): the space's 16px mark (below), space name, then the corner.
    - Line 2: title at 14px. As T3's, it leads (`foreground`, medium) when focused, blocked or done, else recedes (`muted`, normal); hovering brightens it, in color only.
    - Line 3, only when there is something to say (12px `dim`): the branch, cut in the middle as T3's (`text_ellipsis_middle`). As T3's sidebar, nothing of its sub-agents: its state takes theirs in.

@@ -157,8 +157,9 @@ export function inboxRowView(view, t, model, actions, drag) {
         .child(svg("mods/t3-inbox/icons/check.svg").size(14).flex_none().text_color(lit(id, t.muted)))
         .child("Settle")
         .when(offer, (el) => stop(view, t, id, el, 6)), { action: on ? settleKey() : undefined, delay }))));
-    // T3's card row: 10 and 8 in, rounded-md, its lines 20, 20 and 16 tall, 4 and 2 apart: 78 with all three.
-    const base = v_flex().id(`${ghost ? "ghost-" : ""}card-${a.address}`).px(10).py(8).flex_none().rounded(6)
+    // T3's card row: rounded-md, its lines 20, 20 and 16 tall, 4 and 2 apart: 78 with all three. 8 in, not T3's 10, so its words and
+    // icons end where the buttons' icons above do (docs/internals/t3-tokens.md「规则」R3).
+    const base = v_flex().id(`${ghost ? "ghost-" : ""}card-${a.address}`).px(8).py(8).flex_none().rounded(6)
       // A working row recedes until it's hovered or in view, as T3's.
       .when(!ghost, (el) => el.opacity(running(a) && !woke(a) && !on && !over ? 0.7 : 1).transition("opacity", MOTION));
     return (ghost ? base : row(base, a, details).role("button").accessibility_label(title(a)).on_hover(hover(a)).when(Boolean(menuMod), context(a))
@@ -207,7 +208,7 @@ export function inboxRowView(view, t, model, actions, drag) {
     const time = napping
       ? h_flex().gap(4).items_center().text_color(t.accent).child(svg("mods/t3-inbox/icons/alarm-clock.svg").size(12).flex_none().text_color(t.accent)).child(left(napUntil(a), now))
       : !ghost && ago(settledAt(a)[0], now);
-    const base = h_flex().id(`${ghost ? "ghost-" : ""}slim-${a.address}`).h(SLIM).px(10).gap(10).flex_none().items_center().rounded(6);
+    const base = h_flex().id(`${ghost ? "ghost-" : ""}slim-${a.address}`).h(SLIM).px(8).gap(10).flex_none().items_center().rounded(6);
     return (ghost ? base : row(base, a, details).role("button").accessibility_label(title(a)).on_hover(hover(a)).when(Boolean(menuMod), context(a)).on_click(open(a)))
       .when(on, (el) => el.bg(t.selected))
       .when(!on && !ghost && !dragging && !view.sweep?.moved, (el) => el.hover((s) => s.bg(t.hover)).active((s) => s.bg(t.selected)))

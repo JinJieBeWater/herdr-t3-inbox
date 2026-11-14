@@ -7,11 +7,12 @@
 // word, so it's read from the terminal's own (terminals()).
 export const ownStatus = (word, address, all) => (all.find((k) => k.address === address)?.status === "error" ? "blocked" : word);
 
-// A sub-agent's own word: a sub-agent without a pane isn't in agents(), so its raw word, error counting as
-// blocked for aggregation. Keep done distinct from idle; only the parent's done is unread news.
+// A sub-agent's own word, error kept apart from blocked (subAgents puts them together). agents()'s done is unread
+// only; a sub-agent without a pane isn't in it, and Herdr's seen label says whether its last turn was read.
 export const kidStatus = (k, listed) => {
-  const s = k.status ?? listed.get(k.address);
-  return s === "error" ? "blocked" : s;
+  if (k.status === "error") return "error";
+  const s = listed.get(k.address) ?? k.status;
+  return s === "done" && !listed.has(k.address) && Number(k.labels?.["herdr.seen"]) >= k.turn ? "idle" : s;
 };
 
 // An agent, as agents() has them: its program reports a status, or the program table says it's one (before its first
@@ -25,12 +26,19 @@ export function agentKids(all, addr, seen = new Set()) {
     .flatMap((k) => isAgent(k) ? [k] : (seen.add(k.address), agentKids(all, k.address, seen)));
 }
 
-// Live sub-agents of `addr`, all the way down.
-export function descendants(all, addr, seen = new Set()) {
+// Live sub-agents of `addr`, all the way down, depth first: each with its depth (0 a level under) and the tree's
+// guides in front of it (├ └ for itself, │ or "" for each level above).
+export function kidTree(all, addr, lead = [], seen = new Set()) {
   if (seen.has(addr)) return [];
   seen.add(addr);
-  return agentKids(all, addr, seen).flatMap((k) => [k, ...descendants(all, k.address, seen)]);
+  const kids = agentKids(all, addr, seen);
+  return kids.flatMap((k, i) => {
+    const last = i === kids.length - 1;
+    return [{ k, depth: lead.length, lines: [...lead, last ? "└" : "├"] }, ...kidTree(all, k.address, [...lead, last ? "" : "│"], seen)];
+  });
 }
+
+export const descendants = (all, addr) => kidTree(all, addr).map((r) => r.k);
 
 // Its own word with what's under it: needing the person first, then its own done, then busy or waiting on
 // sub-agents it will hear back from, else its own. No word of its own: no agent, whatever it started.
@@ -54,8 +62,9 @@ export function notNews(k, word, kids) {
   return stillSettled(k, word, kids) || Number(k?.labels?.snoozed) > Date.now();
 }
 
-// Snapshot once per render, like namer(): what's under each address, as words.
+// Snapshot once per render, like namer(): what's under each address, as words to put together (treeStatus).
 export function subAgents(agentList, all) {
   const listed = new Map(agentList.map((a) => [a.address, a.status]));
-  return (addr) => descendants(all, addr).map((k) => kidStatus(k, listed));
+  // A failed turn needs the person as a question does.
+  return (addr) => descendants(all, addr).map((k) => { const s = kidStatus(k, listed); return s === "error" ? "blocked" : s; });
 }

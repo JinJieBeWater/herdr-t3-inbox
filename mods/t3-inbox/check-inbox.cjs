@@ -680,7 +680,7 @@ test("the top tools and scope trigger use shared chrome button sizes and on stat
   }
   f.context.theme = () => ({ foreground: "#eeeeee", selected: "#333333" });
   f.mod.scopeOpen = true; f.render();
-  assert.equal(find(f.tree, "inbox-scope").style.bg[0], "#333333", "the open scope is pressed");
+  assert.equal(find(f.tree, "inbox-scope").style.bg[0], "#eeeeee12", "the open scope is pressed: the text color at 7%, not the theme's selected");
 });
 
 test("the space filter's menu measures as T3's, its search text inside the button's left edge", () => {

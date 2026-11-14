@@ -5,7 +5,25 @@
 
 // A turn that failed needs the person as a question does. Programs report it as `error`; agents() has no such
 // word, so it's read from the terminal's own (terminals()).
-export const ownStatus = (word, address, all) => (all.find((k) => k.address === address)?.status === "error" ? "blocked" : word);
+export const ownStatus = (word, address, all) => (byParent(all).at.get(address)?.status === "error" ? "blocked" : word);
+
+// Each list terminals() gave, indexed once: its live terminals by parent, and every one by address. A render reads the list
+// once and asks about many agents; a filter of the whole list per agent was O(agents × terminals).
+const indexes = new WeakMap();
+function byParent(all) {
+  let ix = indexes.get(all);
+  if (!ix) {
+    ix = { kids: new Map(), at: new Map() };
+    for (const k of all) {
+      if (!ix.at.has(k.address)) ix.at.set(k.address, k);
+      if (k.state !== "live") continue;
+      const list = ix.kids.get(k.parent);
+      if (list) list.push(k); else ix.kids.set(k.parent, [k]);
+    }
+    indexes.set(all, ix);
+  }
+  return ix;
+}
 
 // A sub-agent's own word, error kept apart from blocked (subAgents puts them together). agents()'s done is unread
 // only; a sub-agent without a pane isn't in it, and Herdr's seen label says whether its last turn was read.
@@ -22,7 +40,7 @@ export const isAgent = (k) => k.status != null || Boolean(k.program?.agent);
 // The live sub-agents a level under `addr`: a shell between isn't one, and what it started stands where it would have.
 // `seen` stops a loop in the parents.
 export function agentKids(all, addr, seen = new Set()) {
-  return all.filter((k) => k.parent === addr && k.state === "live" && !seen.has(k.address))
+  return (byParent(all).kids.get(addr) ?? []).filter((k) => !seen.has(k.address))
     .flatMap((k) => isAgent(k) ? [k] : (seen.add(k.address), agentKids(all, k.address, seen)));
 }
 

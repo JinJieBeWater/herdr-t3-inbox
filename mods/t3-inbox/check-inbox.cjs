@@ -110,7 +110,8 @@ function fixture() {
     programOf: (x) => x.mod ? f.state[`${x.mod}.program`] ?? null : x.program,
     modStatus: (x) => f.state[`${x.mod}.status`]?.[x.tab] ?? null,
     localStorage: { getItem: (k) => f.data.get(k) ?? null, setItem: (k, v) => f.data.set(k, v), removeItem: (k) => f.data.delete(k) },
-    keys: () => [], agents: () => f.rows, terminals: () => f.terms, panes: () => [],
+    keys: () => [], agents: () => f.rows, terminals: () => [...f.terms], // a new list each call, as Herdr gives (tree.js indexes each list once)
+    panes: () => [],
     spaces: () => [{ id: "s1", name: "One", tabs: [] }, { id: "s2", name: "Two", tabs: [] }],
     focused: () => ({ agent: f.rows.find((a) => a.focused)?.address }),
     theme: () => ({}), settings: () => ({}), props: () => ({}),

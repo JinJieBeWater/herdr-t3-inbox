@@ -6,7 +6,6 @@ import { MOTION, planMotion, flying } from "./motion.js";
 import { stop } from "./focus.js";
 import { inboxTop } from "./filter.js";
 import { FIRST, MORE } from "./row-model.js";
-import { KEY } from "./store.js";
 
 // T3's slim rows and Show more (h-9) and its shelves' headers (h-8), logical px.
 export const SLIM = 36, SHELF = 32;

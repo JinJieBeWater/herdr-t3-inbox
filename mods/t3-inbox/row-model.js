@@ -7,7 +7,7 @@ const GRACE = 2000;
 const BUSY = new Set(["working", "blocked"]);
 // The last word when times tie, so the order doesn't follow the order the data came in.
 const byAddress = (x, y) => x.address.localeCompare(y.address);
-export const byRecent = (x, y) => y.since - x.since || byAddress(x, y);
+const byRecent = (x, y) => y.since - x.since || byAddress(x, y);
 // The cards: one waiting on the person first, however long it has waited; the rest by when each came back.
 export const byCard = (x, y) => Number(y.blocked) - Number(x.blocked) || byRecent(x, y);
 

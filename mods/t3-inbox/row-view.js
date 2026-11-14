@@ -7,6 +7,7 @@ import { glow, tip, tipMark, keyOf } from "./tip.js";
 import { MOTION } from "./motion.js";
 import { detailsLive, detailsFor, detailsLine, detailsCard } from "./details.js";
 import { programIcon } from "./program.js";
+import { statusMark } from "./status-mark.js";
 import { stop, within } from "./focus.js";
 import { snoozeButton } from "./snooze.js";
 import { SLIM } from "./list-view.js";
@@ -126,7 +127,7 @@ export function inboxRowView(view, t, model, actions, drag) {
         ? pill(t.working, svg("mods/workspace-chrome/spinner.svg").size(16).flex_none().text_color(t.working).spin(900),
           "Working", started(a) > 0 && started(a) < Infinity ? took(started(a), now) : null)
         : st === "blocked"
-          ? pill(t.blocked, div().size(16).flex_none().rounded(4).bg(t.blocked + "26").text_size(11).font_bold().flex().items_center().justify_center().child("!"), "Needs you")
+          ? pill(t.blocked, statusMark(t, "blocked", 16), "Needs you")
           : wokeMark
             || (st === "done"
               ? pill(t.ansi2, svg("mods/t3-inbox/icons/circle-check.svg").size(16).flex_none().text_color(t.ansi2), "Done")

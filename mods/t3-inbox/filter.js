@@ -6,7 +6,7 @@ import { glow, tip } from "./tip.js";
 import { stop, pressed, justClosed } from "./focus.js";
 import { step, scrollList } from "./list.js";
 import { FIRST } from "./row-model.js";
-import { KEY } from "./store.js";
+import { KEY, closedKey } from "./store.js";
 import { openMenu } from "./menu.js";
 import { button, radiusOf } from "./button.js";
 import { trigger } from "./trigger.js";
@@ -102,18 +102,18 @@ export function inboxTop(view, t, model) {
     .child(stop(view, t, "inbox-search", h_flex().id("inbox-search").flex_1().h(32).px(8).gap(8).items_center().rounded(6).text_size(14).font_medium()
       .text_color(lit("inbox-search", t.dim)).hover((s) => s.bg(t.hover)).on_hover(glow(view, "inbox-search")).on_mouse_down("left", () => pressed(view))
       // Each opens over its button, before the pointer can report leaving it.
-      .role("button").accessibility_label("Search").on_click((_e, cx) => { view.hot = null; const picker = props()?.picker ?? "picker"; if (!justClosed(view, `${picker}.closed`)) run("mod.open", { name: picker }); cx.notify(); })
+      .role("button").accessibility_label("Search").on_click((_e, cx) => { view.hot = null; const picker = props()?.picker ?? "picker"; if (!justClosed(view, closedKey(picker))) run("mod.open", { name: picker }); cx.notify(); })
       .child(svg("mods/t3-inbox/icons/search.svg").size(16).flex_none().text_color(lit("inbox-search", t.dim)))
       .child(div().child("Search"))))
     .child(h_flex().flex_none().items_center()
     .child(tip(view, t, "inbox-scope", "Filter by space", filter, { off: view.scopeOpen, hint: "Shift+click to pick several", below: true }))
     // The layout's menu asks which machine, as its mod.json places it; the shipped one can't, so docked alone it's the active space's.
-    .child(tool("inbox-new-space", "New space", "folder-plus", `${props()?.newMenu}.pickClosed`, () => {
+    .child(tool("inbox-new-space", "New space", "folder-plus", closedKey(props()?.newMenu, "pick"), () => {
       if (!asks) { run("space.new"); return false; }
       openOverlay({ mod: props().newMenu, kind: "popup", frame: "none", at: /** @type {any} */ ("top"), offset: 96, width: 576, height: 420, props: { pick: true } });
     }, asks ? null : "space.new"))
     // The layout passes its own menu; docked alone, the shipped one.
-    .child(tool("inbox-new-tab", "New tab", "square-pen", `${props()?.newMenu ?? "new-menu"}.closed`, () => run("mod.open", { name: props()?.newMenu ?? "new-menu" }))));
+    .child(tool("inbox-new-tab", "New tab", "square-pen", closedKey(props()?.newMenu ?? "new-menu"), () => run("mod.open", { name: props()?.newMenu ?? "new-menu" }))));
 
 
   return top;

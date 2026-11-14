@@ -35,7 +35,7 @@ export const kidStatus = (k, listed) => {
 
 // An agent, as agents() has them: its program reports a status, or the program table says it's one (before its first
 // report). A shell an agent started to run a command (`hc run --bg`) is a child terminal, not a sub-agent.
-export const isAgent = (k) => k.status != null || Boolean(k.program?.agent);
+const isAgent = (k) => k.status != null || Boolean(k.program?.agent);
 
 // The live sub-agents a level under `addr`: a shell between isn't one, and what it started stands where it would have.
 // `seen` stops a loop in the parents.

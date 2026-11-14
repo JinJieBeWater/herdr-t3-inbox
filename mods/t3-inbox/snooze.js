@@ -2,7 +2,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Popover, Popup, Select, InputState, Input, NumberInput } from "gpui-base";
 import { run, theme, props, settings, closeOverlay } from "herdr";
 import { stopsInit, stop, focusRoot, onStop } from "./focus.js";
-import { menuJump } from "./list.js";
+import { menuJump, openLit } from "./list.js";
 import { menuRow, menuRule, menuHint } from "./menu-row.js";
 import { glow, tip } from "./tip.js";
 import { MOTION } from "./motion.js";
@@ -241,7 +241,9 @@ export function snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick) 
     .on_open_change((open, cx) => {
       view.napMenu = open ? a.address : null;
       if (!open) view.napRight = null;
-      view.napAt = -1;
+      // Opened by keys (no press on its button), its first row lit; by the pointer, none (list.js openLit).
+      view.napAt = openLit(open && !view.napPress);
+      view.napPress = false;
       // T3's menu fades in: drawn clear once, then let go (Herdr eases only later changes). It closes at once.
       if (open) { view.napShown = false; cx.timer.after(16, (cx) => { view.napShown = true; cx.notify(); }); }
       // Enter and Space are the Popover's, which would only close it: a binding of ours, deeper in, comes first.
@@ -251,7 +253,7 @@ export function snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick) 
     })
     .trigger(h_flex().id(napId).h(20).px(6).flex_none().items_center().justify_center().rounded(6)
       .opacity(napOffer ? 1 : 0).transition("opacity", MOTION).on_hover(glow(view, napId))
-      .on_mouse_down("left", (e) => { view.napRight = e.bounds ? (e.bounds.x + e.bounds.width) / zoom : null; })
+      .on_mouse_down("left", (e) => { view.napPress = true; view.napRight = e.bounds ? (e.bounds.x + e.bounds.width) / zoom : null; })
       .role("button").accessibility_label("Snooze agent")
       .child(svg("mods/t3-inbox/icons/clock.svg").size(12).flex_none().text_color(menu ? t.foreground : lit(napId, t.muted)))
       .when(napOffer, (el) => stop(view, t, napId, el, 6)))

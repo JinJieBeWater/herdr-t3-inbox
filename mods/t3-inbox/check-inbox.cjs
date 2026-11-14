@@ -1837,12 +1837,16 @@ test("a sweep from a pinned card's Settle stays among the pins", async () => {
   assert.deepEqual(f.labelled.map((l) => l.split("=")[0]), ["label P settled", "label Q settled"]);
 });
 
-test("the snooze menu lights nothing until the pointer or a key gets there, and a pick needs a lit row", () => {
+test("the snooze menu, opened by the pointer, lights nothing until the pointer or a key gets there; by keys, its first row", () => {
   const f = fixture(); f.add("A", "idle", 100); f.render(); f.mod.hovered = "A"; f.render();
-  f.event("snooze-menu-A", "on_open_change", true); f.render();
   const lit = () => find(f.tree, "snooze-panel-A").items.filter((r) => r.key).findIndex((r) => r.style.bg);
+  f.event("snooze-menu-A", "on_open_change", true); f.render();
+  assert.equal(lit(), 0, "opened by keys (no press on its button): the first row lit");
+  f.event("snooze-menu-A", "on_open_change", false); f.render(); f.mod.hovered = "A"; f.render();
+  f.event("snooze-A", "on_mouse_down:left", { bounds: { x: 0, y: 0, width: 20, height: 20 } });
+  f.event("snooze-menu-A", "on_open_change", true); f.render();
   const rows = find(f.tree, "snooze-panel-A").items.filter((r) => r.key).length;
-  assert.equal(lit(), -1);
+  assert.equal(lit(), -1, "by the pointer: nothing lit");
   f.event("snooze-panel-A", "on_action:t3_inbox_snooze_pick"); f.flush();
   assert.deepEqual([f.labelled, f.mod.napMenu], [[], "A"], "Enter on nothing does nothing");
   f.event("snooze-panel-A", "on_key_down", { key: "up" }); f.render();

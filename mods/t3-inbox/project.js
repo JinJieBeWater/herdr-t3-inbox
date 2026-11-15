@@ -3,7 +3,7 @@
 // draws spaces or opens a tab in one (t3-inbox, t3-agents, t3-pane, t3-picker, t3-spaces, t3-new-menu, t3-tabs, t3-menu).
 import { image, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { exec, readTextFile, appHome, settings, shared, setShared, spaces, panes, run } from "herdr";
+import { checking, exec, readTextFile, appHome, settings, shared, setShared, spaces, panes, run } from "herdr";
 import { Buffer } from "buffer";
 import { createHash } from "crypto";
 import * as fs from "fs/promises";
@@ -122,6 +122,7 @@ function projectIcon(s, ps, follow) {
   const folder = placeOf(s, ps);
   if (!folder) return null;
   const key = iconKey(s, ps), icons = shared(KEY.spaceIcons) ?? {}, known = icons[key] ?? null;
+  if (checking()) return known;
   // As T3's cache: a found icon is looked for again after 10 minutes, a missing one after a minute.
   const stale = !looked.has(key) || Date.now() - looked.get(key) > (known ? 600000 : 60000);
   if (stale && !(follow && key in icons)) {

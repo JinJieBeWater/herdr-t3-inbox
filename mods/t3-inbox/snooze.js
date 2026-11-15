@@ -8,6 +8,7 @@ import { glow, tip } from "./tip.js";
 import { MOTION } from "./motion.js";
 import { presets } from "./snooze-presets.js";
 import { button, radiusOf } from "./button.js";
+import { alpha } from "./color.js";
 
 // A custom snooze can be far off; its timer needn't be.
 export const DAY = 86400000;
@@ -138,7 +139,7 @@ export function customView(view) {
   // NumberInput replays these onto its own step buttons (their ids are its own); inside the frame's 1px, so 7 round.
   // Not shared/button.js: they're the input's own halves, a hover tint of the card as button.js's.
   const stepper = (glyph, name, side) => h_flex().h_full().px(11).flex_none().items_center().justify_center().cursor_pointer()
-    .when(side === "l", (el) => el.rounded_l(7)).when(side === "r", (el) => el.rounded_r(7)).hover((s) => s.bg(t.foreground + "12"))
+    .when(side === "l", (el) => el.rounded_l(7)).when(side === "r", (el) => el.rounded_r(7)).hover((s) => s.bg(alpha(t.foreground, "12")))
     .accessibility_label(name).child(svg(`mods/t3-inbox/icons/${glyph}.svg`).size(16).flex_none().text_color(t.muted));
   // T3's unit Select, on the kit's: it owns Esc and ↑/↓/Enter opening; the highlight, the pick and a press elsewhere are ours.
   // The trigger is drawn as the date's, the list under it, the chosen one shaded.

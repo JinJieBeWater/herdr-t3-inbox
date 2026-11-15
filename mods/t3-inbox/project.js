@@ -8,6 +8,7 @@ import { Buffer } from "buffer";
 import { createHash } from "crypto";
 import * as fs from "fs/promises";
 import { KEY } from "./store.js";
+import { alpha } from "./color.js";
 
 // T3's project colors in its order, each as Tailwind's 400 (dark themes) and 600 (light).
 const PALETTE = [
@@ -51,7 +52,7 @@ export function projectMark(mod, s, size, t, ps, follow) {
     .child(svg(`${mod}/icons/folder.svg`).size(size).text_color(t.dim));
   const color = tint(s.name, isDark(t));
   // As T3's ProjectMonogram: the color on a 14% wash of itself, bold monospace at its 8.25 in a 16 tile.
-  return h_flex().size(size).flex_none().rounded(size / 4).bg(color + "24").items_center().justify_center()
+  return h_flex().size(size).flex_none().rounded(size / 4).bg(alpha(color, "24")).items_center().justify_center()
     .font_family(settings().font_family ?? "JetBrains Mono").font_bold().text_size(size * 8.25 / 16).text_color(color)
     .child(text);
 }

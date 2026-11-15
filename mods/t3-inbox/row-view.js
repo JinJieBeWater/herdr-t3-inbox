@@ -51,7 +51,7 @@ export function inboxRowView(view, t, model, actions, drag) {
   // A button's icon and text brighten together: a hover style reaches the text but not the svg, so it's state.
   const lit = (id, color) => (view.hot === id ? t.foreground : color);
   // A space's mark, as t3-spaces draws it.
-  const avatar = (id, name, size) => projectMark(sp.find((s) => s.id === id) ?? { name: name ?? "" }, size, t, ps);
+  const avatar = (id, name, size) => projectMark("mods/t3-inbox", sp.find((s) => s.id === id) ?? { name: name ?? "" }, size, t, ps);
   // A control's label in a row belongs to the same group as the row's card, so it too opens at once.
   const delay = detailsLive(view) ? 0 : 150;
   // A right-click: the agent's menu, as an Agents row's and the tab bar title's; a page's card (Review) is its pane's. The

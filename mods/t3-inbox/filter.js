@@ -34,7 +34,7 @@ export function inboxTop(view, t, model) {
   const { sp, ps, scope } = model;
   const lit = (id, color) => view.hot === id ? t.foreground : color;
   // A space's mark, as t3-spaces draws it.
-  const avatar = (id, name, size) => projectMark(sp.find((s) => s.id === id) ?? { name: name ?? "" }, size, t, ps);
+  const avatar = (id, name, size) => projectMark("mods/t3-inbox", sp.find((s) => s.id === id) ?? { name: name ?? "" }, size, t, ps);
   // T3's top row: search on the left, then the space filter, new space and new tab.
   const asks = props()?.newMenu && machines().length > 1;
   const tool = (id, label, icon, closed, onOpen, action = undefined) => trigger(view, t, id, { icon: `mods/t3-inbox/icons/${icon}.svg`, label, closed, onOpen, action });

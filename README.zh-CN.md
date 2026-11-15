@@ -19,7 +19,6 @@ Herdr 不会更新别人做的 mod。再添加一次也不行：安装从不覆�
 - 对你的 Herdr agent 说：「从 github.com/JinJieBeWater/herdr-t3-inbox 更新 T3 Inbox：用仓库最新的文件覆盖我已安装的 `mods/t3-inbox/`，然后对它跑 `herdr-app check`。」如果首次安装时因为重名改过名字，就覆盖改名后的那份。
 - 手动更新：把目录里的文件复制过去覆盖旧的。mod 保存后自动重载，停靠位置保持不变。
 - 会保留：Settled 收纳区、已 Settle 的 agent、space 筛选。这些存在 `data/` 和终端标签里，不在 mod 目录中。会丢掉：你自己对被覆盖文件的修改。
-- 从 `t3-focus`（Focus 改名为 Inbox 之前）升级：把 `data/t3-focus` 改名为 `data/t3-inbox`（卡片顺序和收纳区状态），把 `keys.json` 里的 `t3-focus.settle` 改成 `t3-inbox.settle`，再删掉 `mods/t3-focus`。
 
 ## 它会运行什么
 

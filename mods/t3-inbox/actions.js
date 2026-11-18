@@ -5,9 +5,38 @@ import { placeOf } from "./project.js";
 import { t3Settings } from "./layout-settings.js";
 import { KEY } from "./store.js";
 import { pinList, unpin, putBack } from "./pins.js";
+import { ownStatus, stillSettled } from "./tree.js";
+
+// A pane must still belong to a settled agent and stay outside the viewed tab.
+export function clearTargets(view, { put, viewing, f, sp, ps, term, all, kids }) {
+  const tabNow = f?.tab ?? sp.find(s => s.active)?.tabs.find(c => c.active)?.id;
+  const byPane = new Map(ps.map(p => [p.pane, p]));
+  return put.filter(a => {
+    if (!a.pane || viewing(a) || a.tab === tabNow) return false;
+    const p = byPane.get(a.pane), k = term.get(a.address);
+    if (p?.terminal !== a.address || p.tab !== a.tab || !k) return false;
+    const settled = view.pending.settled[a.address] ?? k.labels?.settled;
+    return stillSettled({ turn: k.turn, labels: { settled } }, ownStatus(a.status, a.address, all), kids.get(a.address));
+  });
+}
+
+export function closeSettled(doomed, { sp, ps }) {
+  if (!doomed.length) return;
+  const gone = new Set(doomed.map(a => a.pane));
+  for (const s of sp) {
+    const targets = doomed.filter(a => a.space === s.id);
+    if (!targets.length) continue;
+    const tabs = new Set(s.tabs.map(c => c.id));
+    // The space stays: pane.close refuses its last pane. Make a shell tab in its current folder first.
+    if (ps.filter(p => tabs.has(p.tab)).every(p => gone.has(p.pane))) {
+      run("tab.new", { space: s.id, folder: placeOf(s, ps), focus: false });
+    }
+    for (const a of targets) run("pane.close", { pane: a.pane });
+  }
+}
 
 export function inboxActions(view, model) {
-  const { every, viewing, term, napUntil, wake, state, settledAt, busy, pinned, out, busyRows, sp, ps, put } = model;
+  const { every, viewing, term, napUntil, wake, state, settledAt, busy, pinned, out, busyRows } = model;
   // A row moving away from under the pointer reports no leave.
   const away = (a, cx) => {
     if (view.hovered !== a.address) return;
@@ -93,10 +122,10 @@ export function inboxActions(view, model) {
     view.napAt = -1;
     notify({ title: "Couldn't snooze the agent", body: "That time has passed. Choose another.", level: "warning" });
   };
-  // The Custom dialog's answer. By then it may have come to need the person, which T3 refuses too.
-  view.customSnooze = (answer, cx) => {
+  // Called with a fresh model when the Custom dialog answers. Its tree may now need the person.
+  const customSnooze = (answer, cx) => {
     const i = answer.lastIndexOf(":"), at = Number(answer.slice(i + 1)), a = every.find((x) => x.address === answer.slice(0, i));
-    if (a && state(a) !== "blocked" && at > Date.now()) snooze(a, at, cx);
+    if (a && term.has(a.address) && state(a) !== "blocked" && at > Date.now()) snooze(a, at, cx);
   };
   // The settle key: the agent in view, as its card's Settle (finished) or its settled row's undo.
   view.settleKey = (cx) => {
@@ -106,22 +135,5 @@ export function inboxActions(view, model) {
     else if (!busy(a)) settle([a], cx);
   };
 
-  // Clear closes settled agents' panes; Herdr then closes emptied tabs. The one in view stays.
-  const spaceNow = sp.find((s) => s.active), tabNow = spaceNow?.tabs.find((c) => c.active)?.id;
-  const doomed = put.filter((a) => a.pane && !viewing(a) && a.tab !== tabNow);
-  view.clearSettled = () => {
-    const gone = new Set(doomed.map((a) => a.pane));
-    for (const id of new Set(doomed.map((a) => a.space))) {
-      const s = sp.find((s) => s.id === id), tabs = s?.tabs.map((c) => c.id) ?? [];
-      const mine = ps.filter((p) => tabs.includes(p.tab));
-      // The space stays: pane.close refuses its last pane, so a space left empty gets a fresh shell tab first,
-      // where its terminals are now: an unnamed space is named after that, and s.folder is only where it began.
-      if (mine.every((p) => gone.has(p.pane))) run("tab.new", { space: id, folder: placeOf(s, ps) });
-      for (const a of doomed.filter((a) => a.space === id)) run("pane.close", { pane: a.pane });
-    }
-    // tab.new shows the new tab; go back to where the person was.
-    if (tabNow) { run("space.select", { id: spaceNow.id }); run("tab.select", { id: tabNow }); }
-  };
-
-  return { away, repin, unsettle, go, settle, pick, doomed };
+  return { away, repin, unsettle, go, settle, pick, customSnooze };
 }

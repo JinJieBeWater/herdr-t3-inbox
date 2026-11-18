@@ -6,17 +6,18 @@ import { MOTION, planMotion, flying } from "./motion.js";
 import { stop } from "./focus.js";
 import { inboxTop } from "./filter.js";
 import { FIRST, MORE } from "./row-model.js";
+import { clearTargets } from "./actions.js";
 
 // T3's slim rows and Show more (h-9) and its shelves' headers (h-8), logical px.
 export const SLIM = 36, SHELF = 32;
 // T3's list: 1px between its items (gap-px), a card's item adding 2 above and below (py-0.5); 8 in, and a card's 2 more at the top.
 export const STACK = 1, CARD_GAP = 5, LIST_TOP = 8;
 
-export function inboxList(view, t, model, actions, drag, draw, cx) {
+export function inboxList(view, t, model, drag, draw, cx) {
   const { list, every, sp, scope, kids, working, pinned, out, work, nap, put, busyRows, napRows, busy } = model;
   const { d, dragging, lifted, plan, cardH, rows, hot, aim, gap, others, placeholder, boundary, pinTo } = drag;
   const { card, slim } = draw;
-  const { doomed } = actions;
+  const doomed = clearTargets(view, model);
   const zoom = Number(settings()?.zoom) || 1;
   const lit = (id, color) => view.hot === id ? t.foreground : color;
   const scoped = sp.filter((s) => scope.includes(s.id));
@@ -131,12 +132,15 @@ export function inboxList(view, t, model, actions, drag, draw, cx) {
     .role("button").accessibility_label("Clear settled agents")
     .on_click((_e, cx) => {
       cx.stop_propagation();
+      const targets = clearTargets(view, view.compute(cx)).map(a => [a.address, a.pane]);
+      if (!targets.length) return cx.notify();
       view.hot = null; // The dialog covers it, before the pointer can report leaving it.
       const ask = {
-        title: `Close ${doomed.length} terminal${doomed.length === 1 ? "" : "s"}?`,
+        title: `Close ${targets.length} terminal${targets.length === 1 ? "" : "s"}?`,
         detail: "This ends the terminals of your settled agents. The tab you're on stays.",
         yes: "Close",
-        command: { name: "t3-inbox.clear" },
+        // The address/pane pairs live only with this dialog, including in the standalone Inbox.
+        command: { name: `t3-inbox.clear:${JSON.stringify(targets)}` },
       };
       // The layout's T3 dialog is t3-actions'; published alone (no `home` prop) this mod has only the shipped one.
       openOverlay(props()?.home ? { mod: "t3-actions", kind: "dialog", frame: "none", width: 512, props: { actions: "confirm", ...ask } }

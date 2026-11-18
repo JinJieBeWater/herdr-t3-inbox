@@ -18,7 +18,7 @@ import { stopsInit, stopsEnd, focusRoot, enter } from "./focus.js";
 import { FIRST, trackInboxRows, inboxInView, inboxFields, inboxSections } from "./row-model.js";
 import { DAY, initCustom, customView } from "./snooze.js";
 import { inboxMatches, pickInboxSpace } from "./filter.js";
-import { inboxActions } from "./actions.js";
+import { clearTargets, closeSettled, inboxActions } from "./actions.js";
 import { inboxDrag } from "./drag.js";
 import { inboxRowView } from "./row-view.js";
 import { inboxList } from "./list-view.js";
@@ -81,15 +81,15 @@ export default class Inbox extends View {
     });
     // The cards' times (5m, 2h) move on by the minute, as T3's do.
     cx.timer.every(60000, (cx) => cx.notify());
-    // `t3-inbox.clear`: Clear's confirm dialog. `t3-inbox.settle`: the settle key standalone (keys.json); the layout binds `t3-tabs.settle`, which the tab bar handles even when hidden.
+    // `t3-inbox.clear:<targets>`: Clear's confirm dialog. `t3-inbox.settle`: the settle key standalone (keys.json); the layout binds `t3-tabs.settle`, which the tab bar handles even when hidden.
     // `t3-inbox.custom-snooze:<address>:<wake ms>`: the Custom dialog, a copy of this mod with no loop of its own.
     // `t3-inbox.undo`: the undo notice's Undo, when the sidebar footer (t3-chrome) shows it.
     cx.spawn(async (cx) => {
       for (;;) {
         const command = await nextCommand();
         if (command === "settle") /** @type {any} */ (this).settleKey?.(cx);
-        else if (command === "clear") /** @type {any} */ (this).clearSettled?.();
-        else if (command.startsWith("custom-snooze:")) /** @type {any} */ (this).customSnooze?.(command.slice("custom-snooze:".length), cx);
+        else if (command.startsWith("clear:")) this.clearSettled(command.slice("clear:".length), cx);
+        else if (command.startsWith("custom-snooze:")) this.customSnooze(command.slice("custom-snooze:".length), cx);
         else if (command === "undo") this.undo(cx);
         // pane.go onto this list (mod.json's "focusable"): the keyboard starts at Search.
         else if (command === "focus") enter(this, cx, "inbox-search");
@@ -101,6 +101,18 @@ export default class Inbox extends View {
   matches() { return inboxMatches(this); }
 
   pick(s, shift, cx) { pickInboxSpace(this, s, shift, cx); }
+
+  clearSettled(answer, cx) {
+    let targets;
+    try { targets = new Map(JSON.parse(answer)); } catch { return; }
+    if (!targets.size) return;
+    const model = this.compute(cx);
+    closeSettled(clearTargets(this, model).filter(a => targets.get(a.address) === a.pane), model);
+  }
+
+  customSnooze(answer, cx) {
+    inboxActions(this, this.compute(cx)).customSnooze(answer, cx);
+  }
 
   track(list, all, now, cx) {
     const { changes, waits, dirty } = trackInboxRows(this.changed, list, all, now);
@@ -294,7 +306,7 @@ export default class Inbox extends View {
     this.publishRows([...model.pinned, ...model.out, ...model.busyRows], [...model.napRows, ...drag.rows], model.inView,
       [...model.pinned, ...model.out, ...model.work, ...model.nap, ...model.put]);
     const draw = inboxRowView(this, t, model, actions, drag);
-    const { top, list } = inboxList(this, t, model, actions, drag, draw, cx);
+    const { top, list } = inboxList(this, t, model, drag, draw, cx);
     const tree = drag.root(v_flex().id("t3-inbox-root").relative().size_full().min_h(0).bg(t.chrome).text_size(14)
       .on_size_change((size) => { this.height = size.height / zoom; this.width = size.width / zoom; }))
       .child(top).child(list);

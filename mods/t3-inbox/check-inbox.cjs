@@ -44,6 +44,7 @@ function lineOf(node, text) {
 
 function fixture() {
   /** @type {any} */ const f = { watches: [], tick() { for (const w of [...f.watches]) if (!w.cancelled) w.fn(cx); }, pointer: { x: 0, y: 0 }, active: true, now: 1000, rows: [], terms: [], order: [], calls: [], jobs: [], timers: [], data: new Map(), pins: [], mode: "inbox", notifications: [], state: {}, labelled: [], writes: [], orderWrites: 0 };
+  let receive;
   // The real Date, with its clock at f.now.
   /** @type {any} */ const FakeDate = function (...args) { return args.length ? new Date(...args) : new Date(f.now); };
   FakeDate.now = () => f.now;
@@ -87,7 +88,7 @@ function fixture() {
     setShared: (k, v) => { f.writes.push(k); if (k === "t3.pins") f.pins = Array.from(v); else f.state[k] = v; },
     setAgentOrder: (xs) => { f.orderWrites++; f.order = Array.from(xs); },
     run: (...args) => f.calls.push(args), notify: (n) => f.notifications.push(n), openOverlay() {}, closeOverlay() {},
-    hc: async (args) => { f.labelled.push(args.join(" ")); return { code: 0 }; }, nextCommand: () => new Promise(() => {}),
+    hc: async (args) => { f.labelled.push(args.join(" ")); return { code: 0 }; }, nextCommand: () => new Promise((resolve) => { receive = resolve; }),
   };
   // name.js is the fake above: these cards are titled by what each test sets.
   const src = bundle(__dirname, "main.js", new Set(["name.js"]));
@@ -133,6 +134,13 @@ function fixture() {
   f.napping = () => slims(find(f.tree, "snoozed"));
   // Label writes run as jobs; the core's copy is what the next render reads.
   f.flush = () => { for (const job of f.jobs.splice(0)) job(cx); };
+  f.command = async (name) => {
+    assert.ok(name.startsWith("t3-inbox."), `not an Inbox command: ${name}`);
+    assert.ok(receive, "the mod is waiting for commands");
+    receive(name.slice("t3-inbox.".length));
+    await new Promise(setImmediate);
+    f.flush();
+  };
   f.label = (address, key, value) => { f.terms.find((k) => k.address === address).labels[key] = value; };
   f.cx = cx;
   f.env = env;
@@ -260,12 +268,50 @@ test("only the agent in view advertises the settle key, the layout's or the stan
 
 test("Clear confirms terminals, as closing a tab does", () => {
   const f = fixture(); f.add("A").tab = "ta"; f.add("B").tab = "tb";
+  f.context.panes = () => f.rows.map(a => ({ pane: a.pane, tab: a.tab, terminal: a.address }));
+  f.context.spaces = () => [{ id: "s1", name: "One", active: true, tabs: f.rows.map(a => ({ id: a.tab })) }];
   for (const id of ["A", "B"]) f.label(id, "settled", "500:0");
   f.render();
   const opened = []; f.context.openOverlay = (o) => opened.push(o);
   f.event("settled-clear", "on_click");
   assert.deepEqual([opened[0].props.title, opened[0].props.yes], ["Close 2 terminals?", "Close"]);
 });
+
+for (const [change, redraw, closes] of [
+  ["another terminal becomes settled", true, ["A"]],
+  ["the terminal resumes work", false, []],
+  ["the terminal finishes a new turn", false, []],
+  ["the tab comes into view", false, []],
+  ["the agent moves to a different pane", true, []],
+]) {
+  test(`Clear checks its confirmed targets when ${change}`, async () => {
+    for (const standalone of [true, false]) {
+      const f = fixture(), a = f.add("A"), b = f.add("B");
+      a.tab = "ta"; b.tab = "tb";
+      let active = "shell";
+      f.context.spaces = () => [{ id: "s1", name: "One", active: true, tabs: ["ta", "tb", "shell"].map(id => ({ id, active: id === active })) }];
+      f.context.panes = () => [...f.rows.map(a => ({ pane: a.pane, tab: a.tab, terminal: a.address })), { pane: "ps", tab: "shell", terminal: "shell" }];
+      f.context.focused = () => ({ tab: active, pane: active === "shell" ? "ps" : f.rows.find(a => a.tab === active)?.pane });
+      if (!standalone) f.context.props = () => ({ home: "t3-tabs.home" });
+      const opened = [];
+      f.context.openOverlay = o => opened.push(o);
+      f.label("A", "settled", "500:0");
+      f.render(); f.flush();
+      f.event("settled-clear", "on_click");
+      assert.equal(opened[0].mod, standalone ? "confirm" : "t3-actions");
+      assert.equal(opened[0].props.title, "Close 1 terminal?");
+      if (change === "another terminal becomes settled") f.label("B", "settled", "900:0");
+      if (change === "the terminal resumes work") a.status = "working";
+      if (change === "the terminal finishes a new turn") f.terms[0].turn++;
+      if (change === "the tab comes into view") active = "ta";
+      if (change === "the agent moves to a different pane") a.pane = "replacement";
+      if (redraw) f.render();
+      await f.command(opened[0].props.command.name);
+      assert.deepEqual(kit.plain(f.calls), closes.map(pane => ["pane.close", { pane }]),
+        standalone ? "standalone Inbox" : "layout Inbox");
+    }
+  });
+}
 
 test("a shared Undo request seen while drawing runs just after the draw, not with the 1s poll", () => {
   const f = fixture(), a = f.add("A"); a.focused = true; f.render(); f.settle();
@@ -1840,6 +1886,41 @@ test("Custom… opens the dialog; its answer snoozes as a preset does, with its 
   f.add("m.1/a:b", "idle", 100); f.render(2100);
   f.mod.customSnooze("m.1/a:b:9000000", f.cx); f.flush();
   assert.deepEqual(f.labelled, ["label m.1/a:b snoozed=9000000"]);
+});
+
+for (const blocked of ["agent", "sub-agent"]) {
+  test(`standalone Custom Snooze refuses a newly blocked ${blocked} before the next draw`, async () => {
+    const f = fixture(), a = f.add("A", "idle", 300);
+    a.focused = true; f.add("B", "idle", 200);
+    f.mod.hovered = "A"; f.mod.napMenu = "A"; f.render(); f.flush();
+    const opened = [];
+    f.context.openOverlay = o => opened.push(o);
+    const rows = find(f.tree, "snooze-panel-A").items.filter(r => r.key);
+    f.event(`snooze-${rows.findIndex(r => texts(r).includes("Custom…"))}-A`, "on_click");
+    assert.equal(opened[0].props.customSnooze, "A");
+    if (blocked === "agent") f.rows[0] = { ...a, status: "blocked" };
+    else f.terms.push({ address: "kid", parent: "A", status: "blocked", state: "live" });
+    await f.command("t3-inbox.custom-snooze:A:9000");
+    assert.deepEqual([f.labelled, f.calls, f.mod.notice ?? null], [[], [], null]);
+  });
+
+  test(`tab-bar Custom Snooze refuses a newly blocked ${blocked}`, { skip: !fs.existsSync(path.join(__dirname, "../t3-tabs/main.js")) }, async () => {
+    const f = fixture(), a = f.add("A", "idle", 300);
+    a.focused = true;
+    const tabs = f.loadTabs();
+    f.render();
+    if (blocked === "agent") a.status = "blocked";
+    else f.terms.push({ address: "kid", parent: "A", status: "blocked", state: "live" });
+    await tabs.snooze("A:9000", f.cx);
+    assert.deepEqual([f.labelled, f.calls, f.state["t3.notice"] ?? null], [[], [], null]);
+  });
+}
+
+test("tab-bar Custom Snooze still puts away the viewed agent if its tree can be snoozed", { skip: !fs.existsSync(path.join(__dirname, "../t3-tabs/main.js")) }, async () => {
+  const f = fixture(), a = f.add("m.1/a:b", "working", 300);
+  a.focused = true;
+  await f.loadTabs().snooze("m.1/a:b:9000", f.cx);
+  assert.deepEqual([f.labelled, f.calls, f.state["t3.notice"].action], [["label m.1/a:b snoozed=9000"], [["t3-tabs.home"]], "Snoozed"]);
 });
 
 test("the custom time follows T3's rules: a real local time in the future, or a positive duration", () => {

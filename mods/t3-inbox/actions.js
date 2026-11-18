@@ -15,6 +15,12 @@ export function inboxActions(view, model) {
   };
   // Undo puts back only the pins it took, where they were: pins made since stay (pins.js).
   const repin = putBack;
+  const unpinRow = (address, cx) => {
+    const before = [...pinList()], took = [address];
+    if (!before.includes(address)) return;
+    unpin(took);
+    view.remember("Unpinned", 1, () => repin(before, took), cx);
+  };
   // Brought back, it's news again: the top of the list.
   const unsettle = (a, cx) => {
     away(a, cx);
@@ -97,6 +103,7 @@ export function inboxActions(view, model) {
     const i = answer.lastIndexOf(":"), at = Number(answer.slice(i + 1)), a = every.find((x) => x.address === answer.slice(0, i));
     if (a && term.has(a.address) && state(a) !== "blocked" && at > Date.now()) snooze(a, at, cx);
   };
+
   // The settle key: the agent in view, as its card's Settle (finished) or its settled row's undo.
   const settleInView = (cx) => {
     const a = every.find(viewing);
@@ -105,5 +112,5 @@ export function inboxActions(view, model) {
     else if (!busy(a)) settle([a], cx);
   };
 
-  return { away, repin, unsettle, go, settle, pick, customSnooze, settleInView };
+  return { away, unpinRow, unsettle, go, settle, pick, customSnooze, settleInView };
 }

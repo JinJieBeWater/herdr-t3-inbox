@@ -8,7 +8,7 @@ const kit = require("./check-kit.js");
 const element = kit.elements({ args: "all" }), { find } = kit;
 // A mod as Herdr would load it (kit.bundle), button.js's private tint kept apart from project.js's exported one.
 const bundle = (dir, file = "main.js", seen = new Set()) => kit.bundle((name) => fs.readFileSync(path.join(dir, name), "utf8"), file,
-  (name, src) => name === "button.js" ? "const { button, radiusOf } = (() => {\n" + kit.strip(src) + "\nreturn { button, radiusOf }; })();" : null, seen);
+  (name, src) => name === "button.js" ? "const { button, radiusOf, GROUP_GAP } = (() => {\n" + kit.strip(src) + "\nreturn { button, radiusOf, GROUP_GAP }; })();" : null, seen);
 
 function slims(node, out = []) {
   if (!node || typeof node !== "object") return out;
@@ -22,6 +22,15 @@ function cards(node, out = []) {
   if (node.key?.startsWith("card-")) out.push(node.key.slice(5));
   else for (const child of node.items) cards(child, out);
   return out;
+}
+
+const shelfHeaders = ["working-header", "snoozed-header", "settled-header"];
+const inboxChildren = (tree) => find(tree, "inbox-list").items;
+function shelfChildren(tree, name) {
+  const children = inboxChildren(tree), start = children.findIndex((n) => find(n, `${name}-header`));
+  if (start < 0) return [];
+  const end = children.findIndex((n, i) => i > start && shelfHeaders.some((id) => find(n, id)));
+  return children.slice(start + 1, end < 0 ? undefined : end);
 }
 
 const texts = kit.strings;
@@ -69,21 +78,22 @@ function fixture() {
     checking: () => false,
     window: Object.assign(() => ({ platform: "macos", active: f.active }), { mouse_position: () => f.pointer, viewport_size: () => ({ width: 1200, height: 800 }) }), View: class {}, div: element, image: (src) => { const e = element(); e.style.image = [src]; return e; }, svg: element, v_flex: element, h_flex: element,
     Popover: { new: (id) => element().id(id) }, HoverCard: { new: (id) => element().id(id) }, Popup: { new: (id, trigger) => element().id(id).child(trigger) }, Select: { new: (id) => element().id(id) }, Input: { new: element }, NumberInput: { new: element }, Button: { new: element },
+    ScrollHandle: { new: () => ({ scroll_to_item(index) { (f.reveals ??= []).push(index); }, release() {} }) },
     InputState: { new: (o = {}) => {
       let value = o.value ?? "";
-      const input = { heard: {}, on(e, fn) { input.heard[e] = fn; }, value: () => value, set_value(v) { value = v; }, focus() {}, set_min(m) { this.min = m; } };
+      const input = { heard: {}, on(e, fn) { input.heard[e] = fn; }, value: () => value, set_value(v) { value = v; }, focus() { f.inputFocus = input; }, set_min(m) { this.min = m; } };
       return input;
     } },
-    namer: () => (a) => a.mod ? f.state[`${a.mod}.titles`]?.[a.tab] || a.title : a.address, Date: FakeDate,
+    namer: () => (a) => a.mod ? f.state[`${a.mod}.titles`]?.[a.tab] || a.title : a.title ?? a.address, Date: FakeDate,
     programOf: (x) => x.mod ? f.state[`${x.mod}.program`] ?? null : x.program,
     modStatus: (x) => f.state[`${x.mod}.status`]?.[x.tab] ?? null,
     localStorage: { getItem: (k) => f.data.get(k) ?? null, setItem: (k, v) => f.data.set(k, v), removeItem: (k) => f.data.delete(k) },
     keys: () => [], agents: () => f.rows, terminals: () => [...f.terms], // a new list each call, as Herdr gives (tree.js indexes each list once)
-    panes: () => [],
+    panes: () => [], machines: () => [{ name: "KVM", connected: true }],
     spaces: () => [{ id: "s1", name: "One", tabs: [] }, { id: "s2", name: "Two", tabs: [] }],
     focused: () => ({ agent: f.rows.find((a) => a.focused)?.address }),
     theme: () => ({}), settings: () => ({}), props: () => ({}),
-    layout: () => ({ id: "sidebar-lists", active: f.mode }),
+    layout: () => ({ id: "sidebar", hidden: f.hidden, children: [{ id: "sidebar-lists", active: f.mode }] }),
     shared: (k) => k === "t3.pins" ? f.pins : f.state[k] ?? null,
     setShared: (k, v) => { f.writes.push(k); if (k === "t3.pins") f.pins = Array.from(v); else f.state[k] = v; },
     setAgentOrder: (xs) => { f.orderWrites++; f.order = Array.from(xs); },
@@ -122,7 +132,7 @@ function fixture() {
     f.tree = f.mod.render(cx);
     return f.tree;
   };
-  f.working = () => cards(find(f.tree, "shelves"));
+  f.working = () => shelfChildren(f.tree, "working").flatMap((n) => cards(n));
   f.active = () => cards(find(f.tree, "inbox-list")).filter((a) => !f.working().includes(a) && !f.pins.includes(a));
   f.event = (id, name, e = {}) => {
     const node = find(f.tree, id);
@@ -131,7 +141,8 @@ function fixture() {
     node.handlers[name]({ position: { x: 20, y: 100 }, local_position: { x: 20, y: 100 }, bounds: { height: 82 }, modifiers: {}, ...e }, cx);
   };
   f.settle = () => f.mod.settleKey(cx);
-  f.napping = () => slims(find(f.tree, "snoozed"));
+  f.napping = () => shelfChildren(f.tree, "snoozed").flatMap((n) => slims(n));
+  f.settled = () => shelfChildren(f.tree, "settled").flatMap((n) => slims(n));
   // Label writes run as jobs; the core's copy is what the next render reads.
   f.flush = () => { for (const job of f.jobs.splice(0)) job(cx); };
   f.command = async (name) => {
@@ -167,7 +178,7 @@ test("an old settle cleanup cannot overwrite a newer turn's Settle", async () =>
   await answer(1, "2000:2"); f.render(2100);
   await answer(0, ""); f.render(2200);
   assert.deepEqual(f.labelled, ["label A settled=", "label A settled=2000:2", "label A settled=2000:2"], "the last intent is written again after both replies");
-  assert.deepEqual(slims(find(f.tree, "settled")), ["A"], "the newer Settle stays visible while repairing the core");
+  assert.deepEqual(f.settled(), ["A"], "the newer Settle stays visible while repairing the core");
   await answer(2, "2000:2"); f.render(2300);
   assert.equal(f.terms[0].labels.settled, "2000:2");
   assert.deepEqual(Object.keys(f.mod.pending.settled), []);
@@ -238,7 +249,7 @@ test("a pinned Settle leaves Pinned immediately through the card, key or drop, w
     f.flush(); f.render();
     assert.deepEqual(f.pins, ["Q"], `${via}: the pin goes before the core answers`);
     assert.equal(find(f.tree, "card-P"), null, `${via}: no pinned card left behind`);
-    assert.deepEqual(slims(find(f.tree, "settled")), ["P"], `${via}: already on Settled`);
+    assert.deepEqual(f.settled(), ["P"], `${via}: already on Settled`);
   }
 });
 
@@ -303,7 +314,7 @@ for (const [name, dialog] of [["standalone Inbox", "confirm"], ["layout Inbox", 
     };
     settle("A");
     f.render();
-    assert.deepEqual(slims(find(f.tree, "settled")), ["A"], "Settle is displayed while the label write waits");
+    assert.deepEqual(f.settled(), ["A"], "Settle is displayed while the label write waits");
     const clearWhileWaiting = find(f.tree, "settled-clear");
     settle("B");
     await new Promise(setImmediate);
@@ -487,11 +498,11 @@ test("a finished run moves to Active once the grace is out; blocked moves at onc
   a.status = "working"; f.render(3300); assert.deepEqual(f.active(), ["A", "B"]);
 });
 
-test("a failed turn needs the person: the terminal's error, which agents() can't say", () => {
+test("an own terminal error is Failed; a descendant error still needs the person and gates Settle", () => {
   const f = fixture(); f.add("A", "done"); f.add("B", "done");
   f.terms[0].status = "error";
   f.render();
-  assert.ok(texts(find(f.tree, "state-A")).includes("Needs you"));
+  assert.ok(texts(find(f.tree, "state-A")).includes("Failed"));
   assert.ok(texts(find(f.tree, "state-B")).includes("Done"));
   // A sub-agent with its own pane is in agents() too, where its error reads as something else.
   f.add("kid", "done"); f.terms.at(-1).parent = "B"; f.terms.at(-1).status = "error";
@@ -501,6 +512,59 @@ test("a failed turn needs the person: the terminal's error, which agents() can't
   assert.equal(f.mod.pending.settled.A, "", "a terminal error ends its settle too");
   const labels = f.jobs.length; f.settle();
   assert.equal(f.jobs.length, labels, "the failed terminal cannot be settled");
+});
+
+test("descendant requests still need the person without adding labels, details or a status action", () => {
+  const f = fixture(); f.add("A", "idle");
+  f.label("A", "snoozed", "3600000");
+  f.terms.push(
+    { address: "shell", parent: "A", state: "live" },
+    { address: "approval", parent: "A", state: "live", status: "blocked", report: { state: "blocked", kind: "permission" } },
+  );
+  f.render(); f.flush();
+  assert.ok(texts(find(f.tree, "state-A")).includes("Needs you"));
+  assert.deepEqual(f.labelled, [], "a blocked descendant interrupts but doesn't end Snooze");
+  f.terms.push(
+    { address: "kvm/kid", parent: "shell", name: "Investigator", state: "live", status: "error",
+      report: { state: "error", msg: "descendant error" } },
+  );
+  f.render(); find(f.tree, "card-A").handlers.on_hover(true, f.cx); f.render(1150); f.render(1184);
+  const state = find(f.tree, "state-A");
+  assert.ok(texts(state).includes("Needs you"));
+  assert.equal(state.handlers.on_click, undefined);
+  assert.doesNotMatch(texts(find(f.tree, "details-card-A")).join("\n"), /Investigator|Error occurred|Approval|descendant error/);
+  assert.equal(find(f.tree, "settle-A").handlers.on_click, undefined);
+  assert.equal(find(f.tree, "snooze-A"), null);
+  f.flush();
+  assert.deepEqual(f.labelled, ["label A snoozed="], "the descendant failure still ends Snooze");
+});
+
+test("only its own current approval and input reports give the card a specific blocked label", () => {
+  for (const [kind, word] of [["permission", "Approval"], ["question", "Input"], ["auth", "Needs you"], ["other", "Needs you"]]) {
+    const f = fixture(); f.add("A", "blocked");
+    f.terms[0].report = { state: "blocked", kind };
+    f.terms.push({ address: "kid", parent: "A", state: "live", status: "error" });
+    f.render(); assert.ok(texts(find(f.tree, "state-A")).includes(word), `${kind}: a descendant cannot override it`);
+    f.terms[0].report = { state: "working", kind };
+    f.render(); assert.ok(texts(find(f.tree, "state-A")).includes("Needs you"), "stale report cannot make the type definite");
+  }
+});
+
+test("the details show T3's generic error notice only for the card's own current error message", () => {
+  const f = fixture(); f.add("A");
+  const own = f.terms[0], msg = "Fixture index unavailable (ERR_SHELF_42).";
+  own.status = "error";
+  own.report = { state: "error", msg };
+  f.render(); find(f.tree, "card-A").handlers.on_hover(true, f.cx); f.render(1150); f.render(1184);
+  const details = () => texts(find(f.tree, "details-card-A"));
+  assert.ok(details().includes("Error occurred"));
+  assert.doesNotMatch(details().join("\n"), /ERR_SHELF_42/);
+  own.report = { state: "blocked", msg }; f.render();
+  assert.ok(!details().includes("Error occurred"), "a mismatched report is not the error");
+  own.report = { state: "error", msg: " " }; f.render();
+  assert.ok(!details().includes("Error occurred"), "there is no error message");
+  own.status = "working"; own.report = { state: "error", msg }; f.render();
+  assert.ok(!details().includes("Error occurred"), "the terminal no longer reports an error");
 });
 
 test("looking, seq and data order don't reshuffle; equal times go by address", () => {
@@ -730,6 +794,140 @@ test("only a list with nothing in it says so, as T3's", () => {
   assert.deepEqual(said(f), ["Nothing in Two yet"]);
 });
 
+test("Show all spaces is a keyboard stop only when scope left no cards", () => {
+  const f = fixture(); f.state["t3.focus"] = "on"; f.render();
+  assert.equal(find(f.tree, "show-all-spaces"), null);
+  f.add("A"); f.label("A", "settled", "500:0"); f.render();
+  assert.equal(find(f.tree, "show-all-spaces"), null, "a folded Settled shelf is not empty");
+  f.mod.pick({ id: "s2" }, false, f.cx); f.mod.limit = 35; f.render();
+  assert.deepEqual(find(f.tree, "show-all-spaces")?.style.tab_index, [0]);
+  f.event("show-all-spaces", "on_click"); f.render();
+  assert.deepEqual([f.data.get("scope"), f.mod.limit, f.calls.length], ["[]", 10, 0]);
+  assert.ok(find(f.tree, "settled-header"));
+});
+
+function searchInbox(f) {
+  f.render();
+  assert.ok(find(f.tree, "inbox-search-input"));
+  assert.ok(f.bound.some((b) => b.keystroke === "down" && b.context === "InboxSearch > Input"), "the search action takes precedence over Input's Down");
+  assert.deepEqual(f.calls, [], "Search did not open Go to");
+  return {
+    query(text) { f.mod.inlineInput.set_value(text); f.mod.inlineInput.heard.change({}, f.cx); f.render(); },
+    key(key) { f.event("inbox-search-field", `on_action:t3_inbox_search_${key}`); f.render(); },
+    enter() { f.mod.inlineInput.heard.submit({}, f.cx); f.render(); },
+  };
+}
+
+const searchResults = (f) => (find(f.tree, "inbox-search-results")?.items ?? []).filter((n) => n.key?.startsWith("search-result-")).map((n) => n.key.slice("search-result-".length));
+
+test("Inbox Search is an input even before typing, and clearing keeps it focused", () => {
+  const f = fixture(); f.add("needle"); f.render();
+  assert.ok(find(f.tree, "inbox-search-input"));
+  assert.equal(find(f.tree, "inbox-search-clear"), null);
+  const search = searchInbox(f);
+  for (const clear of [() => search.key("escape"), () => { f.event("inbox-search-clear", "on_click"); f.render(); }]) {
+    search.query("needle"); clear();
+    assert.equal(f.mod.inlineInput.value(), "");
+    assert.equal(f.inputFocus, f.mod.inlineInput);
+    assert.ok(find(f.tree, "inbox-search-input"));
+    assert.ok(find(f.tree, "card-needle"));
+    assert.equal(find(f.tree, "inbox-search-results"), null);
+  }
+  assert.deepEqual(f.calls, []);
+});
+
+test("Inbox Search replaces every shelf with compact results without changing normal order", () => {
+  const f = fixture();
+  f.add("match-active"); f.add("match-working", "working"); f.add("match-snoozed"); f.add("match-settled");
+  f.add("match-out-of-scope").space = "s2";
+  f.label("match-snoozed", "snoozed", "6000000"); f.label("match-settled", "settled", "500:0");
+  for (let i = 0; i < 11; i++) { const a = f.add(`old${i}`); f.label(a.address, "settled", `${600 + i}:0`); }
+  f.mod.pick({ id: "s1" }, false, f.cx);
+  const search = searchInbox(f), normalOrder = f.order, nav = JSON.stringify(f.state["t3-inbox.rows"]), writes = f.orderWrites;
+  search.query("MaTcH");
+  assert.deepEqual(searchResults(f), ["match-active", "match-working", "match-snoozed", "match-settled"]);
+  for (const id of [...shelfHeaders, "card-match-active", "slim-match-settled", "settled-clear", "settled-more"]) assert.equal(find(f.tree, id), null, id);
+  const result = find(f.tree, "search-result-match-active");
+  assert.equal(result.style.h[0], 36);
+  assert.equal(result.handlers["on_mouse_down:left"], undefined, "a result does not lift or sweep");
+  assert.equal(result.handlers["on_mouse_down:right"], undefined, "a result has no card menu");
+  assert.deepEqual([f.mod.workOpen, f.mod.napOpen, f.mod.open, f.mod.limit], [false, false, false, 10]);
+  assert.deepEqual(f.calls, []);
+  assert.deepEqual([f.order, JSON.stringify(f.state["t3-inbox.rows"]), f.orderWrites, f.data.get("scope")], [normalOrder, nav, writes, '["s1"]']);
+  search.key("up"); f.render();
+  assert.deepEqual(find(f.tree, "search-result-match-settled").style.aria_selected, [true], "Up wraps the first result to the last");
+  assert.ok(find(find(f.tree, "inbox-search-results").items[f.reveals.at(-1)], "search-result-match-settled"), "Up reveals that exact result");
+  search.enter();
+  assert.deepEqual(plain(f.calls.at(-1)), ["agent.focus", { terminal: "match-settled" }]);
+  assert.equal(f.mod.inlineInput.value(), "");
+  assert.ok(find(f.tree, "inbox-search-input"));
+});
+
+test("Inbox Search ranks title and branch text, not attention, machine, cwd or card metadata", () => {
+  const f = fixture(), a = f.add("kvm/fix", "blocked"), b = f.add("b"), c = f.add("c"), child = f.add("kvm/sub");
+  a.title = "Prepare release notes"; b.title = "Release"; c.title = "Ship it"; child.title = "Visible child";
+  a.program = { name: "Codex", key: "codex" };
+  f.context.panes = () => [{ pane: a.pane, cwd: "/src/private-cwd", branch: "fix/sidebar" }, { pane: c.pane, branch: "release" }];
+  Object.assign(f.terms.find((k) => k.address === child.address), { parent: a.address, status: "error", report: { state: "error", msg: "private diagnostic" } });
+  f.terms.push({ address: "kvm/hidden", parent: a.address, state: "live", status: "idle", title: "Hidden child" });
+  f.mod.pick({ id: "s1" }, false, f.cx);
+  const search = searchInbox(f);
+  search.query("ReLeAsE"); assert.deepEqual(searchResults(f), ["b", "kvm/fix", "c"]);
+  search.query("release notes"); assert.deepEqual(searchResults(f), ["kvm/fix"]);
+  search.query("fix/sidebar"); assert.deepEqual(searchResults(f), ["kvm/fix"]);
+  search.query("child"); assert.deepEqual(searchResults(f), ["kvm/sub"], "only the existing card matches, even with a parent");
+  for (const q of ["branch:fix/sidebar", "status:failed", "failed", "private diagnostic", "private-cwd", "kvm", "codex", "One", "release sidebar", "hidden child"]) {
+    search.query(q); assert.deepEqual(searchResults(f), [], q);
+    assert.ok(texts(f.tree).includes("No matching cards."), q);
+    assert.equal(find(f.tree, "show-all-spaces"), null, "a text miss does not clear scope");
+  }
+  assert.deepEqual(f.calls, []);
+});
+
+test("Inbox Search Enter opens the first remaining result when the highlight disappears", () => {
+  const f = fixture(); f.add("match-a"); f.add("match-b"); f.add("match-c");
+  const search = searchInbox(f); search.query("match"); search.key("up");
+  f.rows.pop(); f.terms.pop(); f.render();
+  assert.deepEqual(find(f.tree, "search-result-match-a")?.style.aria_selected, [true]);
+  f.rows.shift(); f.terms.shift(); search.enter();
+  assert.deepEqual(plain(f.calls.at(-1)), ["agent.focus", { terminal: "match-b" }]);
+});
+
+test("Inbox Search finds a word inside a title written without spaces", () => {
+  const f = fixture(); f.add("sidebar").title = "优化侧栏搜索";
+  searchInbox(f).query("侧栏");
+  assert.deepEqual(searchResults(f), ["sidebar"]);
+});
+
+test("Inbox Search pointer and keyboard move the same ordinary selected row", () => {
+  const f = fixture(); f.add("work-a"); f.add("work-b", "working"); f.add("work-c");
+  f.context.theme = () => ({ selected: "#444444", accent: "#ff4488" });
+  const search = searchInbox(f); search.query("work");
+  const selected = (suffix) => find(f.tree, `search-result-work-${suffix}`)?.style.bg?.[0];
+  assert.equal(selected("a"), "#444444");
+  f.event("search-result-work-c", "on_mouse_move"); f.render();
+  assert.equal(selected("a"), undefined);
+  assert.equal(selected("c"), "#444444");
+  search.key("down"); search.enter();
+  assert.deepEqual(plain(f.calls), [["agent.focus", { terminal: "work-b" }]]);
+  assert.deepEqual(f.labelled, []);
+});
+
+test("an external jump waits to reveal its card until Inbox Search clears", () => {
+  const f = fixture(), here = f.add("first"), there = f.add("elsewhere", "working");
+  here.focused = true; there.space = "s2";
+  f.mod.pick({ id: "s1" }, false, f.cx);
+  const search = searchInbox(f); search.query("first");
+  here.focused = false; there.focused = true; f.render(1001); f.render(1040);
+  assert.equal(f.mod.inlineInput.value(), "first");
+  assert.deepEqual(searchResults(f), ["first"]);
+  assert.equal(f.data.get("scope"), '["s1"]', "the jump doesn't widen the search results");
+  f.reveals = [];
+  search.key("escape"); f.render();
+  assert.equal(f.data.get("scope"), "[]", "the normal list still widens when it returns");
+  assertReveal(f, "card-elsewhere");
+});
+
 test("the top tools and scope trigger use shared chrome button sizes and on state", () => {
   const f = fixture(); f.render();
   for (const id of ["inbox-scope", "inbox-new-space", "inbox-new-tab"]) {
@@ -765,10 +963,10 @@ test("in keyboard mode each control is a stop, and a row shows with the keyboard
   const on = (id) => { f.mod.fs.keyboard = true; f.mod.fs.handles.set(id, { focus() {}, is_focused: () => true }); };
   f.render();
   assert.equal(find(f.tree, "card-A").style.tab_index, undefined, "no stop until the mode's on: a press would take the terminal's keyboard");
-  assert.equal(find(f.tree, "inbox-search").style.track_focus, undefined);
+  assert.equal(find(f.tree, "inbox-search-field").style.track_focus, undefined);
   f.state["t3.focus"] = "on";
   f.render();
-  for (const id of ["card-A", "inbox-search", "inbox-scope", "inbox-new-space", "inbox-new-tab"]) assert.deepEqual(find(f.tree, id).style.tab_index, [0], id);
+  for (const id of ["card-A", "inbox-search-field", "inbox-scope", "inbox-new-space", "inbox-new-tab"]) assert.deepEqual(find(f.tree, id).style.tab_index, [0], id);
   assert.equal(find(f.tree, "settle-A").style.tab_index, undefined, "faded out it's no button");
   on("card-A"); f.render();
   assert.deepEqual(find(f.tree, "settle-A").style.tab_index, [0], "Settle comes with the keyboard");
@@ -792,9 +990,7 @@ test("pane.go hands the inbox the keyboard, and it starts at Search", async () =
   f.context.nextCommand = async () => { if (sent.length) return sent.shift(); throw new Error("done"); };
   await assert.rejects(f.jobs.at(0)(f.cx), /done/);
   assert.ok(f.state["t3.focus"], "the mode's on");
-  assert.ok(f.keys, "and the keyboard's moved");
-  f.render();
-  assert.equal(find(f.tree, "inbox-search").style.track_focus[0], f.mod.fs.handles.get("inbox-search"));
+  assert.equal(f.inputFocus, f.mod.inlineInput, "the keyboard can type into the input immediately");
 });
 
 test("snooze menu, Custom's units: Home, End and typing move the same highlight", () => {
@@ -847,6 +1043,98 @@ test("a card's marks sit on its third line when it has one, else on the title's"
   assert.ok(find(lineOf(f.tree, "m1/B"), "machine-m1/B"), "no third line: the title's line carries it");
 });
 
+test("Inbox shows a verified linked Worktree icon by its branch and the path only on icon hover", async (t) => {
+  const { execFileSync } = require("node:child_process");
+  const tmp = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "inbox-worktrees-"));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const main = path.join(tmp, "main"), linked = path.join(tmp, "other checkout"), nested = path.join(linked, "src"), detached = path.join(tmp, "detached");
+  const env = { ...process.env };
+  for (const name of ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"]) delete env[name];
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  fs.mkdirSync(main);
+  git(main, "init", "-qb", "main");
+  git(main, "-c", "user.name=Inbox", "-c", "user.email=inbox@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-qm", "start");
+  git(main, "worktree", "add", "-qb", "topic", linked);
+  git(main, "worktree", "add", "-q", "--detach", detached);
+  fs.mkdirSync(nested);
+  const f = fixture(), seen = [];
+  f.add("A"); f.add("B"); f.add("C"); f.add("folded", "working");
+  f.context.panes = () => [
+    { pane: "A", cwd: main, branch: "main" }, { pane: "B", cwd: nested, branch: "topic" },
+    { pane: "C", cwd: detached, branch: null }, { pane: "folded", cwd: tmp, branch: "folded" },
+  ];
+  f.context.exec = async (cmd, args, { cwd, on }) => {
+    assert.equal(cmd, "git"); assert.equal(on, null);
+    seen.push([cwd, args]);
+    return { code: 0, stdout: git(cwd, ...args), stderr: "" };
+  };
+  f.render(); assert.deepEqual(seen, [], "no Git during render");
+  f.render(); f.flush(); await new Promise(setImmediate); f.render();
+  assert.equal(find(f.tree, "worktree-A"), null, "the main checkout has no indicator");
+  const icon = find(lineOf(f.tree, "topic"), "worktree-B"), label = "Worktree: other checkout (topic)";
+  assert.ok(icon, "linked checkout from a nested cwd has a mark on the branch line");
+  assert.ok(kit.walk(icon).some((n) => n.kind === "mods/t3-inbox/icons/folder-git-2.svg"), "FolderGit2 glyph");
+  assert.doesNotMatch(texts(find(f.tree, "card-B")).join("\n"), /Worktree|other checkout/);
+  assert.equal(find(f.tree, "worktree-C"), null, "no extra metadata row in the detached checkout");
+  assert.equal(seen.filter(([, args]) => args.includes("worktree")).length, 1);
+  assert.ok(!seen.some(([cwd]) => cwd === tmp), "a folded, unviewed row isn't probed");
+  assert.ok(!seen.some(([cwd]) => cwd === detached), "without a branch, no lookup is needed");
+  const n = seen.length;
+  kit.fire(find(f.tree, "card-B"), "on_hover", true, f.cx); f.render(1150); f.render(1184); f.flush();
+  assert.doesNotMatch(texts(find(f.tree, "details-card-B")).join("\n"), /Worktree|other checkout/);
+  kit.fire(find(f.tree, "tip-over-worktree-B"), "on_hover", true, f.cx);
+  kit.fire(find(f.tree, "worktree-B"), "on_hover", true, f.cx);
+  f.render();
+  assert.ok(texts(find(f.tree, "tip-worktree-B")).includes(label));
+  assert.equal(seen.length, n, "redraws and hover reuse the cache");
+});
+
+test("Inbox does not publish a stale worktree result after cwd change or reconnect", async () => {
+  const f = fixture(), calls = [], a = f.add("kvm/A");
+  let cwd = "/slow", ready = true;
+  f.context.machines = () => [{ name: "kvm", layout: ready ? "ready" : "unavailable" }];
+  f.context.panes = () => [{ pane: a.pane, cwd, branch: "topic" }];
+  f.context.exec = (cmd, args, options) => new Promise((answer) => { calls.push({ cmd, args, ...options, answer }); });
+  const probe = () => { f.render(); f.render(); f.flush(); };
+  const reply = async (i, stdout) => { calls[i].answer({ code: 0, stdout, stderr: "" }); await new Promise(setImmediate); };
+  const mark = () => find(f.tree, "worktree-kvm/A");
+  probe();
+  assert.deepEqual(calls.map(({ on, cwd }) => [on, cwd]), [["kvm", "/slow"]]);
+  cwd = "/new"; probe();
+  await reply(0, "/slow\n/main/.git\n");
+  assert.deepEqual(calls.map(({ cwd }) => cwd), ["/slow", "/new"], "a no-longer-requested directory does not start another command");
+  f.render(); assert.equal(mark(), null);
+  await reply(1, "/new\n/main/.git\n");
+  assert.ok(calls[2].args.includes("worktree"));
+  ready = false; probe(); ready = true; probe();
+  await reply(2, "worktree /main\0\0worktree /new\0\0");
+  f.render(); assert.equal(mark(), null, "the result from before disconnect is ignored even at the same cwd");
+  assert.ok(calls[3].args.includes("rev-parse"), "reconnect asks again");
+  await reply(3, "/new\n/main/.git\n"); await reply(4, "worktree /main\0\0worktree /new\0\0");
+  f.render(); assert.ok(mark());
+});
+
+test("compact Search drops the Worktree queue and ignores late checkout results", async () => {
+  const f = fixture(), calls = [];
+  f.add("A"); f.add("B");
+  f.context.panes = () => [{ pane: "A", cwd: "/linked", branch: "topic" }, { pane: "B", cwd: "/next", branch: "next" }];
+  f.context.exec = (_cmd, args, { cwd }) => new Promise((answer) => calls.push({ args, cwd, answer }));
+  const reply = async (i, stdout) => { calls[i].answer({ code: 0, stdout, stderr: "" }); await new Promise(setImmediate); };
+  const search = searchInbox(f);
+  f.render(); f.flush();
+  assert.deepEqual(calls.map(({ cwd }) => cwd), ["/linked"]);
+  await reply(0, "/linked\n/main/.git\n");
+  assert.ok(calls[1].args.includes("worktree"));
+  search.query("A");
+  await reply(1, "worktree /main\0\0worktree /linked\0\0");
+  assert.equal(calls.length, 2, "no next lookup in compact Search");
+  search.query("");
+  assert.equal(find(f.tree, "worktree-A"), null, "the late result did not decorate the card");
+  f.render(); f.flush();
+  assert.ok(calls[2].args.includes("rev-parse"), "the card asks again when shown");
+  assert.equal(calls[2].cwd, "/linked");
+});
+
 test("remote machine names stay in hover details; only Inbox cards carry a mark", () => {
   for (const mode of lists ? ["inbox", "agents"] : ["inbox"]) {
     const f = fixture(); f.add("m1/A", "blocked");
@@ -888,6 +1176,7 @@ test("a space's own icon, found as T3 finds it, replaces its monogram on every c
   // Its terminal is down in the repo: the icon is the repo's, as T3's is its project root's.
   f.env.spaces = () => [{ id: "s1", name: "One", folder: "", machine: "vps", tabs: [{ id: "b1" }] }];
   f.env.panes = () => [{ pane: "A", tab: "b1", cwd: "/w/one/src" }];
+  f.context.machines = () => [{ name: "vps", layout: "ready" }];
   Object.assign(f.context, {
     Buffer, createHash: require("node:crypto").createHash, appHome: () => "/app",
     fs: { exists: async () => false, mkdir: async () => {}, writeFile: async (p, b) => written.push([p, Buffer.from(b).toString()]) },
@@ -1030,7 +1319,7 @@ test("settling shows T3's undo notice over the first shelf for 5s; Undo puts the
   assert.deepEqual([texts(note())[0], note().style.opacity[0]], ["Settled 1 agent,", 0], "a frame clear, then it fades in");
   f.render(1016);
   assert.equal(note().style.opacity[0], 1);
-  assert.ok(find(find(f.tree, "shelves"), "undo-notice-undo"), "over the first shelf's header, as T3 hosts it");
+  assert.ok(find(find(f.tree, "inbox-shelf-start"), "undo-notice-undo"), "over the first shelf's header, as T3 hosts it");
   const undo = find(f.tree, "undo-notice-undo");
   assert.ok("font_medium" in undo.style && "underline" in undo.hoverStyle, "as T3's InlineButton: medium, underlined on hover");
   // A second settle soon after joins the same notice.
@@ -1104,6 +1393,85 @@ test("a sub-agent in view with no row of its own lights its parent's card, as T3
   f.mod.settleKey(f.cx);
   assert.match(f.mod.pending.settled.A ?? "", /^\d+:/, "the settle key acts on it too");
 });
+
+// The viewport's native handle indexes direct children, including inert ones and section markers.
+function assertReveal(f, row) {
+  const list = find(f.tree, "inbox-list");
+  assert.ok(list.style.track_scroll, "reveal and manual scrolling share the same viewport");
+  const children = (f.reveals ?? []).map((i) => list.items[i]);
+  assert.equal(children.length, 1, `one reveal of ${row}`);
+  assert.ok(find(children[0], row), `the native scroll index must name ${row}, not its whole shelf`);
+  assert.equal(cards(children[0]).length + slims(children[0]).length, 1);
+}
+
+for (const shelf of ["working", "snoozed", "settled"]) for (const open of [false, true]) {
+  test(`a jump reveals the exact ${shelf} row when the shelf is ${open ? "open" : "folded"}`, () => {
+    const f = fixture(), first = f.add("first"), target = f.add("target", shelf === "working" ? "working" : "idle");
+    first.focused = true;
+    f.mod.workOpen = f.mod.napOpen = f.mod.open = open;
+    f.mod.scope = ["s1"];
+    // A Settled target that won't fit on the first page, with multiple other shelves before it.
+    for (let i = 0; i < 15; i++) {
+      f.add(`working-${i}`, "working", 200 + i);
+      f.add(`snoozed-${i}`); f.label(`snoozed-${i}`, "snoozed", "8000");
+      f.add(`settled-${i}`); f.label(`settled-${i}`, "settled", `${500 + i}:0`);
+    }
+    if (shelf === "snoozed") f.label("target", "snoozed", "9000");
+    if (shelf === "settled") f.label("target", "settled", "100:0");
+    target.space = "s2";
+    f.render();
+    first.focused = false; target.focused = true; f.render(1100); f.render(1200);
+    const id = shelf === "working" ? "card-target" : "slim-target";
+    assertReveal(f, id);
+    assert.deepEqual([...f.mod.scope], [], "a filtered destination is revealed before scrolling");
+    assert.deepEqual([f.mod.workOpen, f.mod.napOpen, f.mod.open, f.mod.limit], [open, open, open, 10]);
+    f.event("inbox-list", "on_scroll_wheel"); f.add("another"); f.render(1450);
+    assert.equal(f.reveals.length, 1, "scrolling away and reordering don't pull the viewport back");
+    assert.equal(f.keys, undefined, "the reveal doesn't move window focus");
+  });
+}
+
+test("a rapid sequence of jumps reveals only the latest destination", () => {
+  const f = fixture(), a = f.add("A"), b = f.add("B"), c = f.add("C");
+  a.focused = true; f.render();
+  a.focused = false; b.focused = true; f.render(1100);
+  b.focused = false; c.focused = true; f.render(1101);
+  f.render(1200);
+  assertReveal(f, "card-C");
+});
+
+test("an Inbox jump reveals its row on the next draw without a fixed wait", () => {
+  const f = fixture(), a = f.add("A"), b = f.add("B");
+  a.focused = true; f.render();
+  a.focused = false; b.focused = true; f.render(1100);
+  f.render(1100);
+  assertReveal(f, "card-B");
+});
+
+test("the Inbox can draw without a host window during checking", () => {
+  const f = fixture(); f.add("A").focused = true;
+  f.context.window = () => null;
+  f.render();
+  assert.ok(find(f.tree, "card-A"));
+  assert.deepEqual(f.reveals ?? [], []);
+});
+
+for (const interrupt of ["hover", "wheel", "deactivate", "hide", "lists", "close"]) {
+  test(`a reveal is not issued after ${interrupt} intervenes`, () => {
+    const f = fixture(), a = f.add("A"), b = f.add("B");
+    a.focused = true; f.render();
+    if (interrupt === "hover") f.event("card-B", "on_hover", true);
+    a.focused = false; b.focused = true; f.render(1100);
+    if (interrupt === "wheel") f.event("inbox-list", "on_scroll_wheel");
+    if (interrupt === "deactivate") f.active = false;
+    if (interrupt === "hide") f.hidden = true;
+    if (interrupt === "lists") f.mode = "lists";
+    if (interrupt === "close") f.mod.close();
+    f.render(1200);
+    if (interrupt !== "close") { f.active = true; f.hidden = false; f.mode = "inbox"; f.render(1300); }
+    assert.deepEqual(f.reveals ?? [], [], "no stale request runs after the viewport returns");
+  });
+}
 
 for (const before of ["no draw", "stale draw", "busy", "settled"]) {
   test(`standalone Settle takes its own snapshot: ${before}`, async () => {
@@ -1683,8 +2051,9 @@ test("a drag wakes a row out of the shelf, with its badge; nothing drags in, and
 test("folding Snoozed slides its header with the list, between Working and Settled", () => {
   const f = fixture(); f.add("A", "idle", 300); f.add("B", "idle", 200); f.add("C", "working", 100); f.mod.listH = 600;
   f.label("A", "snoozed", "3600000"); f.label("B", "settled", "500:0"); f.render();
-  const kids = find(f.tree, "shelves").items.map((n) => n.key).filter(Boolean);
-  assert.ok(kids.indexOf("snoozed") > -1 && kids.indexOf("snoozed") < kids.indexOf("settled"));
+  const kids = inboxChildren(f.tree);
+  const headers = kids.flatMap((n) => shelfHeaders.filter((id) => find(n, id)));
+  assert.deepEqual(headers, shelfHeaders);
   assert.ok(f.mod.motion.at.has("m:snoozed"), "a marker, so rows don't pass over it");
   const y = f.mod.motion.at.get("m:snoozed").y;
   f.mod.napOpen = true; f.render(1100);
@@ -1758,7 +2127,7 @@ test("a label write that keeps failing is tried once a minute from render, and a
 test("a quick Undo stays undone while its writes are under way, whichever lands last", async () => {
   const f = fixture(), a = f.add("A", "idle", 300); f.mod.open = true; a.focused = true; f.render();
   const held = []; f.context.hc = (args) => new Promise((done) => { f.labelled.push(args.join(" ")); held.push(done); });
-  const shown = () => [f.active(), slims(find(f.tree, "settled"))];
+  const shown = () => [f.active(), f.settled()];
   const answer = async (i) => { held[i]({ code: 0 }); await new Promise(setImmediate); f.flush(); };
   f.settle(); f.flush(); f.render();
   assert.deepEqual(shown(), [[], ["A"]]);
@@ -2163,6 +2532,81 @@ test("a row's card goes when its leave never comes: the pointer's elsewhere, or 
   }
 });
 
+test("window deactivation cancels a valid drop and sweep near the bottom without writing", () => {
+  for (const control of ["slim-A", "unsettle-A"]) {
+    const f = fixture(); f.add("A"); f.add("B"); f.label("A", "settled", "500:0");
+    f.mod.open = true; f.mod.hovered = "A"; f.render();
+    f.event("t3-inbox-root", "on_size_change", { width: 300, height: 800 });
+    f.event(control, "on_mouse_down:left");
+    f.pointer = { x: 150, y: 790 };
+    f.event("t3-inbox-root", "on_mouse_move", { position: f.pointer, local_position: f.pointer, bounds: { x: 0, y: 0, width: 300, height: 800 } });
+    if (control === "slim-A") f.mod.drag.target = { section: "active" };
+    f.render();
+    f.active = false; f.tick(); f.flush();
+    assert.deepEqual(f.labelled, [], `${control}: never commit the last target when the window deactivates`);
+    assert.deepEqual([f.mod.drag, f.mod.sweep], [null, null]);
+  }
+});
+
+for (const { surface, id, modifiers, prepare } of [
+  { surface: "Active", id: "card-A", modifiers: { platform: true }, prepare: () => {} },
+  { surface: "Settled", id: "slim-A", modifiers: { shift: true }, prepare: (f) => {
+    f.label("A", "settled", "500:0"); f.mod.open = true;
+  } },
+]) test(`a modified click in ${surface} opens the agent without selecting it`, () => {
+  const f = fixture(); f.add("A"); f.add("B");
+  prepare(f); f.render();
+  f.event(id, "on_mouse_down:left", { modifiers });
+  f.event("t3-inbox-root", "on_mouse_up:left", { modifiers });
+  f.event(id, "on_click", { modifiers }); f.render();
+  assert.deepEqual({
+    opens: plain(f.calls),
+    batchRow: Boolean(find(f.tree, "inbox-batch")),
+    marked: Boolean(find(f.tree, "marked-A")),
+  }, { opens: [["agent.focus", { terminal: "A" }]], batchRow: false, marked: false });
+});
+
+test("Inbox Search clicking a result jumps to that card even without moving the highlight first", () => {
+  const f = fixture(); f.add("match-A"); f.add("match-B");
+  searchInbox(f).query("match");
+  f.event("search-result-match-B", "on_click", { modifiers: { control: true } }); f.render();
+  assert.deepEqual(plain(f.calls), [["agent.focus", { terminal: "match-B" }]]);
+  assert.equal(f.mod.inlineInput.value(), "");
+  assert.ok(find(f.tree, "inbox-search-input"));
+  assert.deepEqual(f.labelled, []);
+});
+
+test("Shift-click still adds and removes spaces without closing the space filter", () => {
+  const f = fixture(); f.add("A"); f.add("B").space = "s2";
+  const openFilter = () => {
+    find(f.tree, "inbox-scope-menu").handlers.on_open_change(true, f.cx); f.render();
+  };
+  f.render(); openFilter();
+  f.event("scope-s1", "on_click"); f.render();
+  assert.deepEqual(cards(f.tree), ["A"]);
+  openFilter();
+  f.event("scope-s2", "on_click", { modifiers: { shift: true } }); f.render();
+  assert.deepEqual([cards(f.tree).sort(), f.data.get("scope"), find(f.tree, "inbox-scope-menu").style.open[0]], [["A", "B"], '["s1","s2"]', true]);
+  f.event("scope-s1", "on_click", { modifiers: { shift: true } }); f.render();
+  assert.deepEqual([cards(f.tree), f.data.get("scope"), find(f.tree, "inbox-scope-menu").style.open[0]], [["B"], '["s2"]', true]);
+  assert.equal(find(f.tree, "inbox-batch"), null);
+});
+
+test("the pin button unpins without opening or dragging, and Undo puts the pin back", () => {
+  const f = fixture(); f.add("A"); f.add("B"); f.add("C"); f.pins = ["C", "A", "B"];
+  f.render();
+  const bubble = [];
+  f.cx.stop_propagation = () => bubble.push("stopped");
+  f.event("unpin-A", "on_mouse_down:left");
+  f.event("unpin-A", "on_click"); f.render(); f.flush();
+  assert.deepEqual(bubble, ["stopped", "stopped"]);
+  assert.equal(f.mod.drag ?? null, null);
+  assert.deepEqual(f.pins, ["C", "B"]);
+  f.mod.undo(f.cx);
+  assert.deepEqual(f.pins, ["C", "A", "B"]);
+  assert.deepEqual([f.labelled, f.calls], [[], []]);
+});
+
 test("a drag or sweep ends when its leave never comes, by the same rule as a leave", () => {
   const box = { x: 0, y: 0, width: 300, height: 800 };
   const lift = (f, x, y) => {
@@ -2293,6 +2737,6 @@ test("a card and a settled row measure as T3's, and the lists stack as its does"
   assert.deepEqual([num(card.items[0], "h"), num(card.items[1], "h"), num(card.items[1], "mt")], [20, 20, 4], "its lines, 4 apart");
   const slim = find(f.tree, "slim-B");
   assert.deepEqual(["h", "min_w"].map((k) => num(find(slim, "slim-corner-B"), k)), [24, 32], "T3's corner");
-  assert.equal(num(find(f.tree, "settled"), "gap"), 1, "gap-px between a shelf's rows");
+  assert.equal(num(shelfChildren(f.tree, "settled").find((n) => find(n, "slim-B")), "mt"), 1, "gap-px between a shelf header and its rows");
   assert.deepEqual(["h", "px", "gap"].map((k) => num(find(f.tree, "inbox-top"), k)), [32, 8, 4], "the search field alone, its middle on the pane headers'");
 });

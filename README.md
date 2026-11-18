@@ -8,6 +8,8 @@ A Herdr App sidebar mod with [T3 Code](https://github.com/pingdotgg/t3code)-styl
 
 It is the Inbox sidebar of the [Herdr T3 layout](https://github.com/JinJieBeWater/herdr-t3), on its own. The layout also hides a settled agent's done dot in the tabs and switches between this list and Lists (Spaces and Agents).
 
+Type in Search to find an agent. Click a result or use ↑, ↓ and Enter to open it.
+
 ## Install
 
 Ask your Herdr agent to add `herdr.dev/mods/JinJieBeWater/herdr-t3-inbox`, or copy `mods/t3-inbox/` into `~/.config/herdr-app/mods/`. It docks on the left the first time Herdr sees it. Its `keys.json` adds a Settle key, `"cmd-shift-s": "t3-inbox.settle"` in `global`, which an install merges into yours (by hand: add that line to `~/.config/herdr-app/keys.json`): it settles the agent in view, or brings it back. How it should look and behave: [RECIPE.md](RECIPE.md).
@@ -24,7 +26,7 @@ Herdr doesn't update mods from others, and adding this again would install a ren
 
 - `hc label <agent> settled=<ms>:<turn>` when you settle or unsettle an agent, or when new work unsettles it.
 - `hc label <agent> snoozed=<ms>` when you snooze an agent or it wakes.
-- For a card's project mark, on the space's machine: `git rev-parse --show-toplevel`, `sh -c` file tests and `base64`, to read the repo's favicon and the page that names it. A found icon is copied to `cache/t3-icons/` in the app's folder. Nothing else; no network.
+- On the space's machine, Git identifies the checkout and linked worktrees. `sh -c` file tests and `base64` read the repo's favicon and the page that names it. A found icon is copied to `cache/t3-icons/` in the app's folder.
 
 ## License
 

@@ -235,16 +235,19 @@ export function customView(view) {
 }
 
 export function snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick) {
-  const napId = `snooze-${a.address}`;
-  const menu = view.napMenu === a.address, zoom = Number(settings()?.zoom) || 1;
-  const lit = (id, color) => view.hot === id ? t.foreground : color;
-  return tip(view, t, napId, "Snooze agent", Popover.new(`snooze-menu-${a.address}`).anchor(view.napRight - NAP_MENU_W >= NAP_MENU_MARGIN ? "top_right" : "top_left").open(menu).track_focus(view.napKeys)
+  const key = a.address, napId = `snooze-${key}`;
+  const menu = view.napMenu === key, zoom = Number(settings()?.zoom) || 1;
+  return tip(view, t, napId, "Snooze agent", Popover.new(`snooze-menu-${key}`).anchor(view.napRight - NAP_MENU_W >= NAP_MENU_MARGIN ? "top_right" : "top_left").open(menu).track_focus(view.napKeys)
     .on_open_change((open, cx) => {
-      view.napMenu = open ? a.address : null;
+      if (!open && view.napMenu !== key) {
+        if (view.napPress === key) { view.napPress = null; view.napRight = null; cx.notify(); }
+        return; // A late close doesn't take down a different trigger's menu.
+      }
+      view.napMenu = open ? key : null;
       if (!open) view.napRight = null;
       // Opened by keys (no press on its button), its first row lit; by the pointer, none (list.js openLit).
-      view.napAt = openLit(open && !view.napPress);
-      view.napPress = false;
+      view.napAt = openLit(open && view.napPress !== key);
+      view.napPress = null;
       // T3's menu fades in: drawn clear once, then let go (Herdr eases only later changes). It closes at once.
       if (open) { view.napShown = false; cx.timer.after(16, (cx) => { view.napShown = true; cx.notify(); }); }
       // Enter and Space are the Popover's, which would only close it: a binding of ours, deeper in, comes first.
@@ -254,14 +257,14 @@ export function snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick) 
     })
     .trigger(h_flex().id(napId).h(20).px(6).flex_none().items_center().justify_center().rounded(6)
       .opacity(napOffer ? 1 : 0).transition("opacity", MOTION).on_hover(glow(view, napId))
-      .on_mouse_down("left", (e) => { view.napPress = true; view.napRight = e.bounds ? (e.bounds.x + e.bounds.width) / zoom : null; })
+      .on_mouse_down("left", (e) => { view.napPress = key; view.napRight = e.bounds ? (e.bounds.x + e.bounds.width) / zoom : null; })
       .role("button").accessibility_label("Snooze agent")
-      .child(svg("mods/t3-inbox/icons/clock.svg").size(12).flex_none().text_color(menu ? t.foreground : lit(napId, t.muted)))
+      .child(svg("mods/t3-inbox/icons/clock.svg").size(12).flex_none().text_color(menu || view.hot === napId ? t.foreground : t.muted))
       .when(napOffer, (el) => stop(view, t, napId, el, 6)))
     .when(menu, (el) => {
       const choices = [...presets(now), { label: "Custom…", custom: true }];
       // Sized as T3's menu: as wide as its rows, 160px at least. Nothing lit until the pointer or a key gets there.
-      return el.content(v_flex().id(`snooze-panel-${a.address}`).min_w(160).mt(4).p(4).rounded(8).bg(t.popover).border_1().border_color(t.border).shadow_lg().text_size(14)
+      return el.content(v_flex().id(`snooze-panel-${key}`).min_w(160).mt(4).p(4).rounded(8).bg(t.popover).border_1().border_color(t.border).shadow_lg().text_size(14)
         .opacity(view.napShown === false ? 0 : 1).transition("opacity", MOTION)
         .track_focus(view.napKeys).key_context("InboxSnoozeMenu")
         .on_action("t3_inbox_snooze_pick", (_e, cx) => {
@@ -277,7 +280,7 @@ export function snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick) 
         })
         .children(choices.flatMap((p, i) => [
           ...(p.custom ? [menuRule(t)] : []),
-          menuRow(view, t, `snooze-${i}-${a.address}`, { at: [view, "napAt", i], label: p.label, trail: p.when ? menuHint(t, p.when) : null, pick: (cx) => { pick(a, p, cx); cx.notify(); } }),
+          menuRow(view, t, `snooze-${i}-${key}`, { at: [view, "napAt", i], label: p.label, trail: p.when ? menuHint(t, p.when) : null, pick: (cx) => { pick(a, p, cx); cx.notify(); } }),
         ])));
     }), { delay, off: menu });
 }

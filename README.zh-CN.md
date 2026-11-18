@@ -8,6 +8,8 @@ Herdr App 的侧栏 mod，带 [T3 Code](https://github.com/pingdotgg/t3code) 式
 
 它就是 [Herdr T3 布局](https://github.com/JinJieBeWater/herdr-t3) 里的 Inbox 侧栏，单独拿出来。整套布局还会在标签栏隐藏已 Settle agent 的完成圆点，并能在这个列表和 Lists（Spaces 和 Agents）之间切换。
 
+在 Search 输入名字即可查找 agent。点击结果，或用 ↑、↓ 选择后按 Enter 打开。
+
 ## 安装
 
 让你的 Herdr agent 添加 `herdr.dev/mods/JinJieBeWater/herdr-t3-inbox`，或者把 `mods/t3-inbox/` 复制进 `~/.config/herdr-app/mods/`。Herdr 第一次看到它时会停靠在左侧。仓库的 `keys.json` 带一个 Settle 快捷键：`global` 里的 `"cmd-shift-s": "t3-inbox.settle"`，安装时会合并进你的 keys.json（手动安装就把这一行加进 `~/.config/herdr-app/keys.json`）：Settle 当前查看的 agent，已 Settle 的则取回。外观和行为见 [RECIPE.zh-CN.md](RECIPE.zh-CN.md)。
@@ -24,7 +26,7 @@ Herdr 不会更新别人做的 mod。再添加一次也不行：安装从不覆�
 
 - Settle、取消 Settle，或新工作让 agent 自动回来时，运行 `hc label <agent> settled=<ms>:<turn>`。
 - Snooze 或唤醒 agent 时，运行 `hc label <agent> snoozed=<ms>`。
-- 为卡片的项目标记，在 space 所在的机器上运行 `git rev-parse --show-toplevel`、`sh -c` 文件测试和 `base64`，读取仓库的 favicon 和声明它的页面。找到的图标会复制到 App 目录的 `cache/t3-icons/`。除此之外不运行别的程序，不发网络请求。
+- 在 space 所在的机器上用 Git 识别 checkout 和链接工作树；用 `sh -c` 文件测试和 `base64` 读取仓库的 favicon 和声明它的页面。找到的图标会复制到 App 目录的 `cache/t3-icons/`。
 
 ## 许可证
 

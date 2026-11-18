@@ -1,7 +1,16 @@
-import { kidStatus, descendants, ownStatus, subAgents, treeStatus } from "./tree.js";
+import { descendants, kidStatus, ownStatus, subAgents, treeStatus } from "./tree.js";
 
 // The settled tail opens on this many, then grows by MORE.
 export const FIRST = 10, MORE = 25;
+
+// As T3's sidebar times: no "ago", nothing past days.
+export function ago(ms, now) {
+  const m = Math.floor((now - ms) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m`;
+  if (m < 1440) return `${Math.floor(m / 60)}h`;
+  return `${Math.floor(m / 1440)}d`;
+}
 // A run that stops stays on the Working shelf this long (ms), as in T3: a quick continuation doesn't move it twice.
 const GRACE = 2000;
 const BUSY = new Set(["working", "blocked"]);

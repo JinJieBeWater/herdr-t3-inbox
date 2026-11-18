@@ -10,19 +10,22 @@
 // view, Wake, a pin or Settle ends it.
 
 import { View } from "gpui-kit";
-import { v_flex, InputState } from "gpui-base";
+import { v_flex, InputState, ScrollHandle } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, theme, shared, setShared, setAgentOrder, props, nextCommand, settings, layout, window } from "herdr";
 import { modStatus, programOf } from "./name.js";
 import { descendants, ownStatus, stillSettled } from "./tree.js";
+import { inboxFacts } from "./facts.js";
+import { inboxWorktrees } from "./worktree.js";
 import { stopsInit, stopsEnd, focusRoot, enter } from "./focus.js";
 import { FIRST, trackInboxRows, inboxInView, inboxFields, inboxSections } from "./row-model.js";
 import { DAY, initCustom, customView } from "./snooze.js";
-import { inboxMatches, pickInboxSpace } from "./filter.js";
+import { SEARCH_KEYS, inboxMatches, inboxSearchResults, pickInboxSpace } from "./filter.js";
+import { step } from "./list.js";
 import { inboxActions } from "./actions.js";
 import { confirmClear } from "./clear-settled.js";
 import { inboxDrag } from "./drag.js";
 import { inboxRowView } from "./row-view.js";
-import { inboxList } from "./list-view.js";
+import { inboxList, searchList } from "./list-view.js";
 import { sidebarParts } from "./sidebar.js";
 import { KEY } from "./store.js";
 import { pinList } from "./pins.js";
@@ -31,15 +34,30 @@ import { writeLabel } from "./labels.js";
 // A label write render keeps asking for waits this long (ms) after failing.
 const RETRY = 60000;
 
+function revealVisible({ rail, stack } = sidebarParts(layout())) {
+  return window()?.active && !rail?.hidden && !stack?.hidden && (!stack || stack.active === "inbox");
+}
+
 export default class Inbox extends View {
-  async close() { stopsEnd(this); }
+  async close() {
+    this.worktrees?.close();
+    this.cancelReveal();
+    this.listScroll?.release();
+    this.searchScroll?.release();
+    this.listScroll = null;
+    this.searchScroll = null;
+    stopsEnd(this);
+  }
 
   init(_props, cx) {
     if (props()?.customSnooze) return initCustom(this, cx);
     stopsInit(this, cx);
+    this.worktrees = inboxWorktrees();
+    this.listScroll = ScrollHandle.new();
+    this.searchScroll = ScrollHandle.new();
     // A menu of its own holds the keyboard off every stop for as long as it's open, and gives it back to the one it opened from.
     // Only while the keyboard's really in it: one left open as the Inbox hid would hold the mode with the keyboard back in the terminal.
-    /** @type {any} */ (this).fs.hold = () => (this.napMenu && this.napKeys.is_focused()) || (this.scopeOpen && this.searching);
+    /** @type {any} */ (this).fs.hold = () => (this.napMenu && this.napKeys.is_focused()) || (this.scopeOpen && this.searching) || this.inlineFocused;
     // Each agent's last state, when we saw it set going or come back (ms; 0: before we were watching), the turns
     // it had ended then, and for one that just stopped, when its run started.
     this.changed = JSON.parse(localStorage.getItem("changes") ?? "{}");
@@ -72,6 +90,14 @@ export default class Inbox extends View {
     // An input can't be asked whether it has the keyboard.
     this.search.on("focus", () => { this.searching = true; });
     this.search.on("blur", () => { this.searching = false; });
+    this.inline = { query: "", at: null };
+    this.inlineFocused = false;
+    this.inlineInput = InputState.new({ placeholder: "Search" });
+    this.inlineInput.on("focus", (_e, cx) => { this.inlineFocused = true; cx.notify(); });
+    this.inlineInput.on("blur", (_e, cx) => { this.inlineFocused = false; cx.notify(); });
+    this.inlineInput.on("change", (_e, cx) => this.changeInline(cx));
+    this.inlineInput.on("submit", (_e, cx) => this.submitInline(cx));
+    cx.bind_keys(SEARCH_KEYS);
     // Takes the keyboard while a row is lifted, so Esc can put it back.
     this.keys = cx.focus_handle();
     // "Working 9s" counts up only while such a card shows.
@@ -93,7 +119,11 @@ export default class Inbox extends View {
         else if (command.startsWith("custom-snooze:")) this.customSnooze(command.slice("custom-snooze:".length), cx);
         else if (command === "undo") this.undo(cx);
         // pane.go onto this list (mod.json's "focusable"): the keyboard starts at Search.
-        else if (command === "focus") enter(this, cx, "inbox-search");
+        else if (command === "focus") {
+          const previous = /** @type {any} */ (this).fs.last;
+          enter(this, cx, "inbox-search");
+          if (this.inline.query || !previous || previous === "inbox-search") this.inlineInput.focus();
+        }
         cx.notify();
       }
     });
@@ -101,7 +131,90 @@ export default class Inbox extends View {
 
   matches() { return inboxMatches(this); }
 
+  cancelReveal() {
+    this.revealTimer?.cancel();
+    this.revealTimer = null;
+    this.reveal = null;
+  }
+
+  // A route reveal follows the viewed row. A search reveal follows one result for that exact query.
+  requestReveal(address, cx, query = "") {
+    this.cancelReveal();
+    if (!address || !(query ? this.searchScroll : this.listScroll)) return;
+    const request = this.reveal = { address, query, ready: false };
+    // The next draw resolves the latest destination against its actual children.
+    this.revealTimer = cx.timer.after(0, (cx) => {
+      if (this.reveal !== request) return;
+      this.revealTimer = null;
+      if (!revealVisible()) { this.cancelReveal(); return; }
+      request.ready = true;
+      cx.notify();
+    });
+  }
+
+  revealDrawn(inView, indices, searchQuery = "") {
+    const request = this.reveal;
+    if (!request) return;
+    const { address, query, ready } = request;
+    if (query ? query !== searchQuery : searchQuery || address !== inView || this.hovered === address) { this.cancelReveal(); return; }
+    if (!ready) return;
+    const index = indices.get(address);
+    this.cancelReveal();
+    // This only queues the index; Herdr consumes it with the layout we just described.
+    if (index !== undefined) (query ? this.searchScroll : this.listScroll).scroll_to_item(index);
+  }
+
   pick(s, shift, cx) { pickInboxSpace(this, s, shift, cx); }
+
+  clearInline(cx, restore = false) {
+    if (!this.inline.query) return;
+    this.inline = { query: "", at: null };
+    this.inlineInput.set_value("");
+    if (this.hot === "inbox-search-clear") this.hot = null;
+    if (this.reveal?.query) this.cancelReveal();
+    if (restore) this.inlineInput.focus();
+    cx.notify();
+  }
+
+  changeInline(cx) {
+    const query = this.inlineInput.value().trim();
+    if (query === this.inline.query) return;
+    this.inline = { query, at: null };
+    this.napMenu = null;
+    if (query && this.reveal && !this.reveal.query) this.searchRoute = this.reveal.address;
+    this.cancelReveal();
+    cx.notify();
+  }
+
+  inlineIndex(results) { return Math.max(0, results.findIndex(({ a }) => a.address === this.inline.at)); }
+
+  inlineStep(key, cx) {
+    const { query } = this.inline;
+    if (!query) return;
+    const results = inboxSearchResults(this.compute(cx, false), query);
+    const to = step({ key }, this.inlineIndex(results), results.length);
+    if (to < 0) return;
+    this.highlightInline(results[to].a.address, cx, true);
+  }
+
+  highlightInline(address, cx, reveal = false) {
+    if (!this.inline.query || (!reveal && this.inline.at === address)) return;
+    this.inline.at = address;
+    if (reveal && revealVisible()) this.requestReveal(address, cx, this.inline.query);
+    else if (this.reveal?.query) this.cancelReveal();
+    cx.notify();
+  }
+
+  submitInline(cx, address = null) {
+    const { query } = this.inline;
+    if (!query) return;
+    const base = this.compute(cx, false), results = inboxSearchResults(base, query);
+    const result = address ? results.find(({ a }) => a.address === address) : results[this.inlineIndex(results)];
+    if (!result) return;
+    this.searchRoute = null;
+    this.clearInline(cx);
+    inboxActions(this, base).go(result.a);
+  }
 
   clearSettled(answer, cx) { confirmClear(this, answer, cx); }
 
@@ -218,11 +331,19 @@ export default class Inbox extends View {
     // As T3's route reveal: an agent brought into view from elsewhere (a key, the picker, its pane) that the space
     // filter hides widens the filter to every space, kept. Not on the first draw, and a filter you pick isn't undone.
     // Only while the Inbox is the mode (or docked alone): moving about in Lists isn't bringing a card into view.
-    const { stack } = sidebarParts(layout());
-    if ((!stack || stack.active === "inbox") && this.inView !== undefined && inView && inView !== this.inView && this.scope.length) {
+    const sidebar = sidebarParts(layout()), { stack } = sidebar;
+    const routeChanged = this.inView !== undefined && inView !== this.inView;
+    const searching = Boolean(this.inline.query), visible = revealVisible(sidebar);
+    // As in T3, a route reached while search replaces the list waits until the normal rows return.
+    if (searching && routeChanged) this.searchRoute = visible ? inView : null;
+    const normalRoute = !searching && (routeChanged || (this.searchRoute && this.searchRoute === inView));
+    if (!searching || !visible) this.searchRoute = null;
+    if ((!stack || stack.active === "inbox") && normalRoute && inView && this.scope.length) {
       const a = every.find((x) => x.address === inView);
       if (a && !this.scope.includes(a.space)) { this.scope = []; localStorage.setItem("scope", "[]"); this.limit = FIRST; }
     }
+    if (!visible) this.cancelReveal();
+    else if (normalRoute) this.requestReveal(inView === this.hovered ? null : inView, cx);
     this.inView = inView;
     // A space that's gone reads as all; its id stays stored, so the scope returns with it.
     const scope = this.scope.filter((id) => sp.some((s) => s.id === id));
@@ -235,6 +356,7 @@ export default class Inbox extends View {
     for (const [key, of] of Object.entries(this.pending)) {
       for (const [k, v] of Object.entries(of)) if (!term.has(k) || (!this.writing[`${key} ${k}`]?.unsure && (term.get(k).labels?.[key] ?? "") === v)) delete of[k];
     }
+    const facts = inboxFacts(term, ps, sp);
     const fields = inboxFields({ every, all, term, pending: this.pending, changed: this.changed, now, inView });
     const { viewing, settledAt, kids, state, running, napUntil, hidden, since, working, begun } = fields;
     // New work brings a settled agent back (tree.js). Hidden ones too.
@@ -279,7 +401,7 @@ export default class Inbox extends View {
     }
     if (publish) this.publishRows([...pinned, ...out, ...busyRows], [...napRows, ...rows], inView,
       [...pinned, ...out, ...work, ...nap, ...put]);
-    return { now, all, ps, sp, f, every, inView, scope, term, pins, wake, ...fields, ...sections };
+    return { now, all, ps, sp, f, every, inView, scope, term, pins, wake, facts, ...fields, ...sections };
   }
 
   // `cards` lead the rows, and say how many: the tab bar's Settle goes on to the next of them (t3.settings).
@@ -299,22 +421,39 @@ export default class Inbox extends View {
   render(cx) {
     if (props()?.customSnooze) return customView(this);
     const t = theme(), zoom = Number(settings()?.zoom) || 1;
-    const model = this.compute(cx, false);
-    const actions = inboxActions(this, model);
-    const drag = inboxDrag(this, t, model, actions);
-    this.publishRows([...model.pinned, ...model.out, ...model.busyRows], [...model.napRows, ...drag.rows], model.inView,
-      [...model.pinned, ...model.out, ...model.work, ...model.nap, ...model.put]);
-    const draw = inboxRowView(this, t, model, actions, drag);
-    const { top, list } = inboxList(this, t, model, drag, draw, cx);
-    const tree = drag.root(v_flex().id("t3-inbox-root").relative().size_full().min_h(0).bg(t.chrome).text_size(14)
-      .on_size_change((size) => { this.height = size.height / zoom; this.width = size.width / zoom; }))
-      .child(top).child(list);
-    const ghost = drag.ghost(draw);
-    if (ghost) tree.child(ghost);
+    const model = this.compute(cx, false), { pinned, out, busyRows, napRows, inView, work, nap, put } = model;
+    const tree = v_flex().id("t3-inbox-root").relative().size_full().min_h(0).bg(t.chrome).text_size(14)
+      .on_size_change((size) => { this.height = size.height / zoom; this.width = size.width / zoom; });
+    const cards = [...pinned, ...out, ...busyRows], ordered = [...pinned, ...out, ...work, ...nap, ...put];
+    let drawn = new Set();
+    const { query } = this.inline;
+    if (query) {
+      // No cards request checkout data while the compact results are drawn.
+      this.worktrees.frame().flush(cx);
+      this.publishRows(cards, [...napRows, ...model.rows], inView, ordered);
+      const results = inboxSearchResults(model, query);
+      const at = results[this.inlineIndex(results)]?.a.address ?? null;
+      if (at !== this.inline.at) {
+        this.inline.at = at;
+        if (revealVisible()) this.requestReveal(at, cx, query);
+      }
+      const { top, list } = searchList(this, t, model, results);
+      tree.child(top).child(list);
+    } else {
+      const actions = inboxActions(this, model), drag = inboxDrag(this, t, model, actions);
+      this.publishRows(cards, [...napRows, ...drag.rows], inView, ordered);
+      drawn = new Set([...cards, ...napRows, ...drag.rows].map((a) => a.address));
+      const rows = inboxRowView(this, t, model, actions, drag);
+      const { top, list } = inboxList(this, t, model, drag, rows, cx);
+      drag.root(tree).child(top).child(list);
+      const ghost = drag.ghost(rows);
+      if (ghost) tree.child(ghost);
+      rows.flushCheckouts(cx);
+    }
     // A row that left the list under the pointer (to the folded Working shelf, or filtered out) never reports the pointer
     // leaving it: forget it, or its card and Settle come back with it.
     const gone = this.hovered;
-    if (gone && !drag.drawn.order.includes(gone)) {
+    if (gone && !drawn.has(gone)) {
       this.hovered = null;
       /** @type {any} */ (this).detailsWait?.cancel();
       if (this.details === gone) this.details = null;

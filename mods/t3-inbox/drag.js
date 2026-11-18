@@ -1,18 +1,18 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { focused, run, settings } from "herdr";
+import { focused, run, settings, window } from "herdr";
 import { focusPane } from "./zoom.js";
-import { dragGone, POINTER_WATCH, pointerMoved } from "./tip.js";
+import { pointerGone, POINTER_WATCH, pointerMoved } from "./tip.js";
 import { detailsAt, detailsFor } from "./details.js";
 import { MOTION } from "./motion.js";
 import { SLIM, CARD_GAP, LIST_TOP } from "./list-view.js";
 import { byCard } from "./row-model.js";
-import { setPinned, unpin } from "./pins.js";
+import { setPinned } from "./pins.js";
 import { alpha } from "./color.js";
 
 export function inboxDrag(view, t, model, actions) {
-  const { list, pins, pinned, put, out, busy, hidden, settledAt, working, since, state, viewing, napUntil, wake, inView, busyRows, napRows } = model;
-  const { settle, unsettle, repin, go } = actions;
+  const { list, pins, pinned, put, out, busy, hidden, settledAt, working, since, state, viewing, napUntil, wake, napRows } = model;
+  const { settle, unsettle, unpinRow, go } = actions;
   const zoom = Number(settings()?.zoom) || 1;
   // Dragging, as T3's sidebar does it (Sidebar.drag.ts, Sidebar.pointer.ts). Press a row and move 6px to lift it;
   // it follows the pointer up and down inside the list and says what letting go will do. While it's lifted, the
@@ -68,9 +68,6 @@ export function inboxDrag(view, t, model, actions) {
   const size = view.limit + (fromPage && plan ? 1 : 0) - (plan?.section === "settled" && from !== "settled" ? 1 : 0);
   const page = view.open ? put.slice(0, size) : [];
   const rows = [...page, ...put.filter((a) => viewing(a) && !page.includes(a))];
-  // What the next and previous keys walk (t3-chrome): the rows drawn, in order, and the one in view. Written only when
-  // it changes: every write redraws every mod.
-  const drawn = { order: [...pinned, ...out, ...busyRows, ...napRows, ...rows].map((a) => a.address), view: inView };
 
   const aim = (to, cx) => {
     if (!view.drag?.moved || JSON.stringify(view.drag.target ?? null) === JSON.stringify(to)) return;
@@ -140,11 +137,7 @@ export function inboxDrag(view, t, model, actions) {
     if (plan.section === "settled") return settle([a], cx);
     if (plan.section === "pinned") setPinned(plan.order);
     // Out of Snoozed it's a Wake, which keeps the pin.
-    else if (pins.includes(a.address) && from !== "snoozed") {
-      const before = [...pins];
-      unpin([a.address]);
-      view.remember("Unpinned", 1, () => repin(before, [a.address]), cx);
-    }
+    else if (pins.includes(a.address) && from !== "snoozed") unpinRow(a.address, cx);
     if (settledAt(a)) unsettle(a, cx);
     if (napUntil(a)) wake(a, cx);
     return false;
@@ -169,6 +162,7 @@ export function inboxDrag(view, t, model, actions) {
   const swept = (a) => Boolean(view.sweep?.moved && view.sweep.keys.includes(a.address));
   const finish = (cx) => {
     if (!view.drag && !view.sweep && !view.back) return;
+    if (window().active === false) return cancelDrag();
     const moved = (dragging && drop(cx)) || (Boolean(view.sweep?.moved) && applySweep(cx));
     if (dragging) view.landed = { key: d.from, y: ghostTop() - TOP };
     if (dragging || view.sweep?.moved) view.dropped = Date.now();
@@ -193,13 +187,17 @@ export function inboxDrag(view, t, model, actions) {
     else if (back?.terminal) run("pane.focus", { terminal: back.terminal });
     return null;
   }
+  function cancelDrag() {
+    if (view.drag?.moved || view.sweep?.moved) view.dropped = Date.now();
+    endDrag();
+  }
 
   // Its leave can get lost (see pointerGone), and the release out there is never reported: this says it left.
   function watchDrag(cx) {
     view.dragWatch?.cancel();
     view.dragWatch = cx.timer.every(POINTER_WATCH, (cx) => {
       if (!(view.drag || view.sweep || view.back)) view.dragWatch.cancel();
-      else if (dragGone(view.dragBox)) view.leftSidebar(cx);
+      else if (window().active === false || pointerGone(view.dragBox)) view.leftSidebar(cx);
     });
   }
 
@@ -210,7 +208,7 @@ export function inboxDrag(view, t, model, actions) {
     if (!(view.drag || view.sweep || view.back)) return;
     const p = (view.drag ?? view.sweep)?.last, w = view.width ?? Infinity, h = view.height ?? Infinity;
     const side = !p || Math.min(p.x, w - p.x) < Math.min(p.y, h - p.y);
-    if (side) endDrag(); else finish(cx);
+    if (window().active === false || side) cancelDrag(); else finish(cx);
     cx.notify();
   };
 
@@ -218,7 +216,8 @@ export function inboxDrag(view, t, model, actions) {
     // Esc puts a lifted row back (the sidebar holds the keyboard only while something is lifted).
     .track_focus(view.keys).on_key_down((e, cx) => {
       if (e.keystroke !== "escape" || !(view.drag || view.sweep || view.back)) return;
-      endDrag();
+      cancelDrag();
+      cx.stop_propagation();
       cx.notify();
     })
     .on_mouse_move((e, cx) => {
@@ -244,5 +243,5 @@ export function inboxDrag(view, t, model, actions) {
       .child(fromShelf ? draw.slim(lifted, true) : draw.card(lifted, true));
   };
 
-  return { d, dragging, lifted, plan, cardH, rows, drawn, hot, verb, badge, others, pinTo, aim, gap, lane, boundary, placeholder, row, open, justDropped, sweepFrom, swept, root, ghost };
+  return { d, dragging, lifted, plan, cardH, rows, hot, verb, badge, others, pinTo, aim, gap, lane, boundary, placeholder, row, open, justDropped, sweepFrom, swept, root, ghost };
 }

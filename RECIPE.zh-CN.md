@@ -13,10 +13,11 @@ Herdr App 的一个侧栏：只把仍需要你关注的 agent 以卡片放在眼
 ## 单独使用
 
 - `mod.json` 让它停靠在左侧、宽 300（`"place": "left"`），Herdr T3 里则由布局放进侧栏的 stack（`"none"`）。`keys.json` 在 `global` 里加 Settle 键：`"cmd-shift-s": "t3-inbox.settle"`。
-- 布局给了就用的 props，没给时：`newMenu`（New tab 打开这个 mod；否则用自带的 `new-menu`）、`picker`（Search；否则自带的 `picker`）、`menu`（卡片的右键菜单；否则没有，因为自带的 `menu` 没有 agent 菜单）和 `home`（Settle 当前查看的 agent 后回 Home；否则照 T3 跳到下一张卡片）。
+- 布局给了就用的 props，没给时：`newMenu`（New tab 打开这个 mod；否则用自带的 `new-menu`）、`menu`（卡片的右键菜单；否则没有，因为自带的 `menu` 没有 agent 菜单）和 `home`（Settle 当前查看的 agent 后回 Home；否则照 T3 跳到下一张卡片）。
 - Settle 和 Snooze 的状态是 agent 自己终端上的标签（`hc label <address> settled=<ms>:<turn>`、`snoozed=<到期 ms>`）：随终端结束，所有 mod 和窗口都读得到。收纳区折叠、筛选和上次看到的状态在 mod 的 `localStorage`；画出来的行以 `t3-inbox.rows` 共享，供布局的按键遍历。
 - Herdr T3 标签栏额外做的（它自己按键的取消 Settle `t3-tabs.unsettled`、已 Settle agent 隐藏的完成点），单独使用时没有。
 - 运行的程序：`hc label`；为 space 标志，在 space 所在机器上跑 `git rev-parse --show-toplevel`、`sh -c` 文件测试和 `base64`。
+- Inbox 在窗格所在的机器上用 `git rev-parse` 和 `git worktree list --porcelain -z` 识别链接工作树。
 
 ## 注意
 

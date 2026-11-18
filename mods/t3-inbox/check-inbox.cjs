@@ -277,97 +277,29 @@ test("only the agent in view advertises the settle key, the layout's or the stan
   assert.ok(unsettle().includes("⇧⌘S"), "the settled agent in view: the key brings it back");
 });
 
-test("Clear confirms terminals, as closing a tab does", () => {
-  const f = fixture(); f.add("A").tab = "ta"; f.add("B").tab = "tb";
+test("the Settled header folds and pages confirmed agents without a Clear control", () => {
+  const f = fixture();
+  for (let i = 0; i < 11; i++) {
+    const a = f.add(`A${i}`);
+    a.tab = `tab-${i}`;
+    f.label(a.address, "settled", `${500 + i}:0`);
+  }
   f.context.panes = () => f.rows.map(a => ({ pane: a.pane, tab: a.tab, terminal: a.address }));
-  f.context.spaces = () => [{ id: "s1", name: "One", active: true, tabs: f.rows.map(a => ({ id: a.tab })) }];
-  for (const id of ["A", "B"]) f.label(id, "settled", "500:0");
+  f.context.spaces = () => [{ id: "s1", name: "One", tabs: f.rows.map(a => ({ id: a.tab })) }];
   f.render();
-  const opened = []; f.context.openOverlay = (o) => opened.push(o);
-  f.event("settled-clear", "on_click");
-  assert.deepEqual([opened[0].props.title, opened[0].props.yes], ["Close 2 terminals?", "Close"]);
+  const header = find(f.tree, "settled-header");
+  assert.equal(find(header, "settled-clear"), null, "confirmed settled agents have no Clear control");
+  assert.deepEqual(texts(header), ["Settled", "11"]);
+  assert.deepEqual(f.settled(), []);
+
+  f.event("settled-header", "on_click"); f.render();
+  assert.equal(f.settled().length, 10);
+  f.event("settled-more", "on_click"); f.render();
+  assert.equal(f.settled().length, 11);
+  f.event("settled-header", "on_click"); f.render();
+  assert.deepEqual(f.settled(), []);
+  assert.equal(f.mod.limit, 10);
 });
-
-for (const [name, dialog] of [["standalone Inbox", "confirm"], ["layout Inbox", "t3-actions"]]) {
-  test(`Clear skips a Settle still waiting for the core in ${name}`, async () => {
-    const f = fixture(), a = f.add("A"), b = f.add("B");
-    a.tab = "ta"; b.tab = "tb";
-    f.mod.open = true;
-    f.context.panes = () => [...f.rows.map(a => ({ pane: a.pane, tab: a.tab, terminal: a.address })), { pane: "ps", tab: "shell" }];
-    f.context.spaces = () => [{ id: "s1", name: "One", active: true, tabs: ["ta", "tb", "shell"].map(id => ({ id })) }];
-    f.context.focused = () => ({ tab: "shell", pane: "ps" });
-    if (dialog === "t3-actions") f.context.props = () => ({ home: "t3-tabs.home" });
-    const opened = [];
-    f.context.openOverlay = o => opened.push(o);
-    let refuse;
-    f.context.hc = args => {
-      if (args[1] === "A") return new Promise(resolve => { refuse = resolve; });
-      f.label("B", "settled", args[2].slice("settled=".length));
-      return Promise.resolve({ code: 0 });
-    };
-
-    const settle = address => {
-      f.mod.hovered = address;
-      f.render();
-      f.event(`settle-${address}`, "on_click");
-      f.flush();
-    };
-    settle("A");
-    f.render();
-    assert.deepEqual(f.settled(), ["A"], "Settle is displayed while the label write waits");
-    const clearWhileWaiting = find(f.tree, "settled-clear");
-    settle("B");
-    await new Promise(setImmediate);
-    f.render();
-    f.event("settled-clear", "on_click");
-    await f.command(opened[0].props.command.name);
-    refuse({ code: 1, stderr: "write denied" });
-    await new Promise(setImmediate);
-    f.render();
-
-    assert.deepEqual(kit.plain(f.calls), [["pane.close", { pane: "B" }]], "only the core-confirmed terminal receives a close command");
-    assert.equal(clearWhileWaiting, null, "a pending-only shelf has no Clear button");
-    assert.equal(opened[0].mod, dialog);
-    assert.equal(opened[0].props.title, "Close 1 terminal?");
-    assert.deepEqual(f.active(), ["A"], "refusal returns the pending card to Active");
-  });
-}
-
-for (const [change, redraw, closes] of [
-  ["another terminal becomes settled", true, ["A"]],
-  ["the terminal resumes work", false, []],
-  ["the terminal finishes a new turn", false, []],
-  ["the tab comes into view", false, []],
-  ["the agent moves to a different pane", true, []],
-]) {
-  test(`Clear checks its confirmed targets when ${change}`, async () => {
-    for (const standalone of [true, false]) {
-      const f = fixture(), a = f.add("A"), b = f.add("B");
-      a.tab = "ta"; b.tab = "tb";
-      let active = "shell";
-      f.context.spaces = () => [{ id: "s1", name: "One", active: true, tabs: ["ta", "tb", "shell"].map(id => ({ id, active: id === active })) }];
-      f.context.panes = () => [...f.rows.map(a => ({ pane: a.pane, tab: a.tab, terminal: a.address })), { pane: "ps", tab: "shell", terminal: "shell" }];
-      f.context.focused = () => ({ tab: active, pane: active === "shell" ? "ps" : f.rows.find(a => a.tab === active)?.pane });
-      if (!standalone) f.context.props = () => ({ home: "t3-tabs.home" });
-      const opened = [];
-      f.context.openOverlay = o => opened.push(o);
-      f.label("A", "settled", "500:0");
-      f.render(); f.flush();
-      f.event("settled-clear", "on_click");
-      assert.equal(opened[0].mod, standalone ? "confirm" : "t3-actions");
-      assert.equal(opened[0].props.title, "Close 1 terminal?");
-      if (change === "another terminal becomes settled") f.label("B", "settled", "900:0");
-      if (change === "the terminal resumes work") a.status = "working";
-      if (change === "the terminal finishes a new turn") f.terms[0].turn++;
-      if (change === "the tab comes into view") active = "ta";
-      if (change === "the agent moves to a different pane") a.pane = "replacement";
-      if (redraw) f.render();
-      await f.command(opened[0].props.command.name);
-      assert.deepEqual(kit.plain(f.calls), closes.map(pane => ["pane.close", { pane }]),
-        standalone ? "standalone Inbox" : "layout Inbox");
-    }
-  });
-}
 
 test("a shared Undo request seen while drawing runs just after the draw, not with the 1s poll", () => {
   const f = fixture(), a = f.add("A"); a.focused = true; f.render(); f.settle();
@@ -794,6 +726,47 @@ test("only a list with nothing in it says so, as T3's", () => {
   assert.deepEqual(said(f), ["Nothing in Two yet"]);
 });
 
+test("the space filter lists unscoped Inbox entries and keeps a selected shell-only space", () => {
+  const f = fixture();
+  f.context.spaces = () => [
+    { id: "s1", name: "One", tabs: [{ id: "agent" }] },
+    { id: "s2", name: "Two", tabs: [{ id: "shell" }] },
+    { id: "s3", name: "Three", tabs: [] },
+    { id: "home", name: "Home", tabs: [] },
+  ];
+  f.context.panes = () => [{ pane: "sh", tab: "shell", terminal: "shell" }];
+  f.terms.push({ address: "shell", status: "idle", state: "live", labels: {} });
+  f.state["t3-tabs.home"] = "home";
+  f.add("A").tab = "agent"; f.label("A", "settled", "500:0");
+  f.review("pm", "review", "s3");
+  f.mod.scopeOpen = true;
+  const choices = () => find(f.tree, "inbox-scope-list").items.filter(n => n.key?.startsWith("scope-")).map(n => n.key);
+  f.render();
+  assert.deepEqual(choices(), ["scope-all", "scope-s1", "scope-s3"]);
+
+  f.mod.pick({ id: "s2" }, false, f.cx); f.render();
+  assert.deepEqual(choices(), ["scope-all", "scope-s1", "scope-s2", "scope-s3"]);
+  assert.ok(find(f.tree, "show-all-spaces"));
+  f.event("scope-s2", "on_click", { modifiers: { shift: true } }); f.render();
+  assert.deepEqual(choices(), ["scope-all", "scope-s1", "scope-s3"]);
+});
+
+test("space filter keyboard navigation and submit use the same eligible spaces as the menu", () => {
+  const f = fixture();
+  f.add("A").space = "s2";
+  f.mod.scopeOpen = true; f.render();
+  f.event("inbox-scope-panel", "on_key_down", { key: "up" });
+  assert.equal(f.mod.scopeAt, 1, "Up wraps from All spaces to the sole eligible space");
+  f.mod.search.heard.submit({}, f.cx);
+  assert.deepEqual(JSON.parse(f.data.get("scope")), ["s2"]);
+
+  f.mod.search.set_value("tWo");
+  f.mod.search.heard.change({}, f.cx);
+  f.mod.scopeOpen = true; f.render();
+  assert.equal(find(f.tree, "scope-all"), null);
+  assert.ok(find(f.tree, "scope-s2"), "search is case-insensitive");
+});
+
 test("Show all spaces is a keyboard stop only when scope left no cards", () => {
   const f = fixture(); f.state["t3.focus"] = "on"; f.render();
   assert.equal(find(f.tree, "show-all-spaces"), null);
@@ -846,7 +819,7 @@ test("Inbox Search replaces every shelf with compact results without changing no
   const search = searchInbox(f), normalOrder = f.order, nav = JSON.stringify(f.state["t3-inbox.rows"]), writes = f.orderWrites;
   search.query("MaTcH");
   assert.deepEqual(searchResults(f), ["match-active", "match-working", "match-snoozed", "match-settled"]);
-  for (const id of [...shelfHeaders, "card-match-active", "slim-match-settled", "settled-clear", "settled-more"]) assert.equal(find(f.tree, id), null, id);
+  for (const id of [...shelfHeaders, "card-match-active", "slim-match-settled", "settled-more"]) assert.equal(find(f.tree, id), null, id);
   const result = find(f.tree, "search-result-match-active");
   assert.equal(result.style.h[0], 36);
   assert.equal(result.handlers["on_mouse_down:left"], undefined, "a result does not lift or sweep");

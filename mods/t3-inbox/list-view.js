@@ -1,12 +1,11 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { settings, layout } from "herdr";
-import { glow, tip } from "./tip.js";
+import { glow } from "./tip.js";
 import { MOTION, planMotion, flying } from "./motion.js";
 import { focusStop, onStop, stop } from "./focus.js";
 import { inboxTop } from "./filter.js";
 import { FIRST, MORE, ago } from "./row-model.js";
-import { canClearSettled, requestClear } from "./clear-settled.js";
 import { projectMark } from "./project.js";
 
 // T3's slim rows and Show more (h-9) and its shelves' headers (h-8), logical px.
@@ -44,7 +43,6 @@ export function inboxList(view, t, model, drag, draw, cx) {
   const { list, every, sp, scope, kids, working, pinned, out, work, nap, put, busyRows, napRows, busy } = model;
   const { d, dragging, lifted, plan, cardH, rows, hot, aim, gap, others, placeholder, boundary, pinTo } = drag;
   const { card, slim } = draw;
-  const canClear = canClearSettled(view, model);
   const showMore = view.open && put.length > view.limit;
   const zoom = Number(settings()?.zoom) || 1;
   const lit = (id, color) => view.hot === id ? t.foreground : color;
@@ -52,11 +50,10 @@ export function inboxList(view, t, model, drag, draw, cx) {
   const lane = (section, xs, draw, spacing) => drag.lane(section, xs, draw, spacing, fly);
   // A shelf's header, folding it: label, then count and chevron at the far edge; the chevron is an indicator, lit with its row.
   // As T3's: 2px in from the rows' edges, the count in normal weight.
-  const shelf = (id, label, count, open, toggle, extra) => {
+  const shelf = (id, label, count, open, toggle) => {
     const header = h_flex().id(id).h(SHELF).mx(2).px(8).gap(8).flex_none().items_center()
       .text_size(12).font_medium().text_color(t.dim)
       .child(div().flex_1().child(label))
-      .when(Boolean(extra), (el) => el.child(extra))
       .child(div().font_normal().child(String(count)));
     return stop(view, t, id, header.role("button").accessibility_label(`${open ? "Hide" : "Show"} ${label.toLowerCase()} agents`)
       .on_hover((on, cx) => {
@@ -135,17 +132,6 @@ export function inboxList(view, t, model, drag, draw, cx) {
         view.undo(cx);
       })
       .child("Undo")));
-  // With nothing to clear the button goes, and a gone element hears no pointer-leave: drop its hover.
-  if (!canClear && view.hot === "settled-clear") view.hot = null;
-  const clearButton = canClear && tip(view, t, "settled-clear", "Clear settled agents", stop(view, t, "settled-clear", h_flex().id("settled-clear").h(20).px(6).flex_none().items_center().rounded(4).text_size(11)
-    .text_color(lit("settled-clear", t.dim)).on_hover(glow(view, "settled-clear"))
-    .role("button").accessibility_label("Clear settled agents")
-    .on_click((_e, cx) => {
-      cx.stop_propagation();
-      requestClear(view, cx);
-      cx.notify();
-    })
-    .child("Clear"), 4));
   const top = inboxTop(view, t, model);
   const body = v_flex().id("inbox-list").relative().flex_1().min_h(0).px(8).pt(LIST_TOP).pb(8).overflow_y_scroll()
     .when(Boolean(view.listScroll), (el) => el.track_scroll(view.listScroll))
@@ -215,7 +201,7 @@ export function inboxList(view, t, model, drag, draw, cx) {
       view.open = !view.open;
       view.limit = FIRST;
       localStorage.setItem("settled.open", String(view.open));
-    }, clearButton).on_mouse_move((_e, cx) => aim({ section: "settled" }, cx))
+    }).on_mouse_move((_e, cx) => aim({ section: "settled" }, cx))
       // As T3's shelf header: brighter while anything is lifted, accent as the target.
       .when(dragging, (el) => el.text_color(hot("settled") ? t.accent : t.foreground))));
     if (dragging && others(rows).length === 0 && !(rows.length > 0 && !plan)) {

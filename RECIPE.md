@@ -37,7 +37,6 @@ A sidebar for Herdr App that keeps only the agents still asking for your attenti
 - That Settle shows `Settled 1 agent, Undo` for 5s; Undo puts it back as it was.
 - Snoozing a working agent for 1 hour moves it to Snoozed; a permission prompt shows it as Needs you, and answering it hides it again. Due, it wakes marked `Woke`.
 - Hovering a card fades its details in beside it; moving to the next card shows that one's at once.
-- `Clear` asks through the `confirm` dialog before it closes anything.
 - Sending that agent a new prompt brings it back to the cards and removes the label.
 - Hovering a settled row and clicking the arrow puts it on top of the cards.
 - With 11+ settled agents, the open shelf shows 10 and `Show N more`.

@@ -22,7 +22,6 @@ import { DAY, initCustom, customView } from "./snooze.js";
 import { SEARCH_KEYS, inboxMatches, inboxSearchResults, pickInboxSpace } from "./filter.js";
 import { step } from "./list.js";
 import { inboxActions } from "./actions.js";
-import { confirmClear } from "./clear-settled.js";
 import { inboxDrag } from "./drag.js";
 import { inboxRowView } from "./row-view.js";
 import { inboxList, searchList } from "./list-view.js";
@@ -86,7 +85,7 @@ export default class Inbox extends View {
     this.scopeAt = 0;
     this.search = InputState.new({ placeholder: "Search spaces…" });
     this.search.on("change", (_e, cx) => { this.scopeAt = 0; cx.notify(); });
-    this.search.on("submit", (_e, cx) => this.pick(this.matches()[this.scopeAt], false, cx));
+    this.search.on("submit", (_e, cx) => this.pick(this.matches(cx)[this.scopeAt], false, cx));
     // An input can't be asked whether it has the keyboard.
     this.search.on("focus", () => { this.searching = true; });
     this.search.on("blur", () => { this.searching = false; });
@@ -108,14 +107,13 @@ export default class Inbox extends View {
     });
     // The cards' times (5m, 2h) move on by the minute, as T3's do.
     cx.timer.every(60000, (cx) => cx.notify());
-    // `t3-inbox.clear:<targets>`: Clear's confirm dialog. `t3-inbox.settle`: the settle key standalone (keys.json); the layout binds `t3-tabs.settle`, which the tab bar handles even when hidden.
+    // `t3-inbox.settle`: the settle key standalone (keys.json); the layout binds `t3-tabs.settle`, which the tab bar handles even when hidden.
     // `t3-inbox.custom-snooze:<address>:<wake ms>`: the Custom dialog, a copy of this mod with no loop of its own.
     // `t3-inbox.undo`: the undo notice's Undo, when the sidebar footer (t3-chrome) shows it.
     cx.spawn(async (cx) => {
       for (;;) {
         const command = await nextCommand();
         if (command === "settle") this.settleKey(cx);
-        else if (command.startsWith("clear:")) this.clearSettled(command.slice("clear:".length), cx);
         else if (command.startsWith("custom-snooze:")) this.customSnooze(command.slice("custom-snooze:".length), cx);
         else if (command === "undo") this.undo(cx);
         // pane.go onto this list (mod.json's "focusable"): the keyboard starts at Search.
@@ -129,7 +127,7 @@ export default class Inbox extends View {
     });
   }
 
-  matches() { return inboxMatches(this); }
+  matches(cx) { return inboxMatches(this, this.compute(cx)); }
 
   cancelReveal() {
     this.revealTimer?.cancel();
@@ -215,8 +213,6 @@ export default class Inbox extends View {
     this.clearInline(cx);
     inboxActions(this, base).go(result.a);
   }
-
-  clearSettled(answer, cx) { confirmClear(this, answer, cx); }
 
   settleKey(cx) {
     inboxActions(this, this.compute(cx)).settleInView(cx);

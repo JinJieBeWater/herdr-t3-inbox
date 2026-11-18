@@ -39,7 +39,6 @@ Herdr App 的一个侧栏：只把仍需要你关注的 agent 以卡片放在眼
 - 这次 Settle 显示 `Settled 1 agent, Undo` 5 秒；Undo 恢复原样。
 - 把工作中的 agent Snooze 1 小时后，它进入 Snoozed；出现权限请求时显示 Needs you，答复后再次隐藏。到点后标 `Woke` 醒来。
 - 悬停卡片时，详情在旁边淡入；移到下一张卡片时，立即显示它的详情。
-- `Clear` 在关闭任何窗格前，先通过 `confirm` 对话框询问。
 - 给这个 agent 发新提示，它回到卡片区，标签被删掉。
 - 悬停已 Settle 的行，点箭头，它回到卡片最上方。
 - 已 Settle 超过 10 个时，展开的收纳区显示 10 个和 `Show N more`。

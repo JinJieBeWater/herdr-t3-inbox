@@ -1,6 +1,6 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Popover, Input } from "gpui-base";
-import { spaces, shared, run, props } from "herdr";
+import { shared, run, props } from "herdr";
 import { projectMark } from "./project.js";
 import { newSpaceButton } from "./new-space.js";
 import { glow, tip } from "./tip.js";
@@ -52,9 +52,12 @@ export function inboxSearchResults(model, query) {
   }).sort((x, y) => y.score - x.score);
 }
 
-export function inboxMatches(view) {
+export function inboxMatches(view, { sp, every }) {
   const q = view.search.value().toLowerCase();
-  return [{ id: null, name: "All spaces" }, ...spaces().filter((s) => s.id !== shared(KEY.home))].filter((s) => s.name.toLowerCase().includes(q));
+  const home = shared(KEY.home);
+  const entrySpaces = new Set(every.map((a) => a.space));
+  const eligible = sp.filter((s) => s.id !== home && (entrySpaces.has(s.id) || view.scope.includes(s.id)));
+  return [{ id: null, name: "All spaces" }, ...eligible].filter((s) => s.name.toLowerCase().includes(q));
 }
 
 // A click shows that space alone; shift-click adds or removes it and keeps the menu open, as in T3.
@@ -75,7 +78,7 @@ export function inboxTop(view, t, model) {
   // T3's top row: search on the left, then the space filter, new space and new tab.
   const tool = (id, label, icon, options) => trigger(view, t, id, { icon: `mods/t3-inbox/icons/${icon}.svg`, label, ...options });
   // The filter shows what it filters to: one avatar, two overlapping, or the plain filter icon.
-  const scoped = sp.filter((s) => scope.includes(s.id)), found = view.matches();
+  const scoped = sp.filter((s) => scope.includes(s.id)), found = inboxMatches(view, model);
   const choice = (s, i) => {
     const on = s.id ? scope.includes(s.id) : scope.length === 0;
     // Selection is a check badge on the icon, as in T3.
@@ -116,7 +119,7 @@ export function inboxTop(view, t, model) {
     .content(v_flex().id("inbox-scope-panel").w(288).mt(4).p(4).rounded(8)
       .bg(t.popover).border_1().border_color(t.border).shadow_lg().text_size(14)
       .on_key_down((e, cx) => {
-        const to = step(e, view.scopeAt, view.matches().length);
+        const to = step(e, view.scopeAt, view.matches(cx).length);
         if (to < 0) return;
         view.scopeAt = to;
         cx.stop_propagation();

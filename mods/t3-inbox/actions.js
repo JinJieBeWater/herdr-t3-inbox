@@ -1,39 +1,9 @@
 import { focused, run, shared, props, notify, openOverlay } from "herdr";
 import { focusAgent, focusPane } from "./zoom.js";
 import { detailsFor } from "./details.js";
-import { placeOf } from "./project.js";
 import { t3Settings } from "./layout-settings.js";
 import { KEY } from "./store.js";
 import { pinList, unpin, putBack } from "./pins.js";
-import { ownStatus, stillSettled } from "./tree.js";
-
-// Clear needs the core's settled label, even when the shelf already shows a pending Settle.
-export function clearTargets(view, { put, viewing, f, sp, ps, term, all, kids }) {
-  const tabNow = f?.tab ?? sp.find(s => s.active)?.tabs.find(c => c.active)?.id;
-  const byPane = new Map(ps.map(p => [p.pane, p]));
-  return put.filter(a => {
-    if (!a.pane || viewing(a) || a.tab === tabNow) return false;
-    const p = byPane.get(a.pane), k = term.get(a.address);
-    if (p?.terminal !== a.address || p.tab !== a.tab || !k) return false;
-    if (view.pending.settled[a.address] !== undefined) return false;
-    return stillSettled(k, ownStatus(a.status, a.address, all), kids.get(a.address));
-  });
-}
-
-export function closeSettled(doomed, { sp, ps }) {
-  if (!doomed.length) return;
-  const gone = new Set(doomed.map(a => a.pane));
-  for (const s of sp) {
-    const targets = doomed.filter(a => a.space === s.id);
-    if (!targets.length) continue;
-    const tabs = new Set(s.tabs.map(c => c.id));
-    // The space stays: pane.close refuses its last pane. Make a shell tab in its current folder first.
-    if (ps.filter(p => tabs.has(p.tab)).every(p => gone.has(p.pane))) {
-      run("tab.new", { space: s.id, folder: placeOf(s, ps), focus: false });
-    }
-    for (const a of targets) run("pane.close", { pane: a.pane });
-  }
-}
 
 export function inboxActions(view, model) {
   const { every, viewing, term, napUntil, wake, state, settledAt, busy, pinned, out, busyRows } = model;

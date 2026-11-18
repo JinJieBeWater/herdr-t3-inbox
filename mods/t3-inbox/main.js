@@ -18,7 +18,8 @@ import { stopsInit, stopsEnd, focusRoot, enter } from "./focus.js";
 import { FIRST, trackInboxRows, inboxInView, inboxFields, inboxSections } from "./row-model.js";
 import { DAY, initCustom, customView } from "./snooze.js";
 import { inboxMatches, pickInboxSpace } from "./filter.js";
-import { clearTargets, closeSettled, inboxActions } from "./actions.js";
+import { inboxActions } from "./actions.js";
+import { confirmClear } from "./clear-settled.js";
 import { inboxDrag } from "./drag.js";
 import { inboxRowView } from "./row-view.js";
 import { inboxList } from "./list-view.js";
@@ -102,13 +103,7 @@ export default class Inbox extends View {
 
   pick(s, shift, cx) { pickInboxSpace(this, s, shift, cx); }
 
-  clearSettled(answer, cx) {
-    let targets;
-    try { targets = new Map(JSON.parse(answer)); } catch { return; }
-    if (!targets.size) return;
-    const model = this.compute(cx);
-    closeSettled(clearTargets(this, model).filter(a => targets.get(a.address) === a.pane), model);
-  }
+  clearSettled(answer, cx) { confirmClear(this, answer, cx); }
 
   customSnooze(answer, cx) {
     inboxActions(this, this.compute(cx)).customSnooze(answer, cx);

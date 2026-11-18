@@ -1,12 +1,12 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { settings, layout, props, openOverlay } from "herdr";
+import { settings, layout } from "herdr";
 import { glow, tip } from "./tip.js";
 import { MOTION, planMotion, flying } from "./motion.js";
 import { stop } from "./focus.js";
 import { inboxTop } from "./filter.js";
 import { FIRST, MORE } from "./row-model.js";
-import { clearTargets } from "./actions.js";
+import { canClearSettled, requestClear } from "./clear-settled.js";
 
 // T3's slim rows and Show more (h-9) and its shelves' headers (h-8), logical px.
 export const SLIM = 36, SHELF = 32;
@@ -17,7 +17,7 @@ export function inboxList(view, t, model, drag, draw, cx) {
   const { list, every, sp, scope, kids, working, pinned, out, work, nap, put, busyRows, napRows, busy } = model;
   const { d, dragging, lifted, plan, cardH, rows, hot, aim, gap, others, placeholder, boundary, pinTo } = drag;
   const { card, slim } = draw;
-  const doomed = clearTargets(view, model);
+  const canClear = canClearSettled(view, model);
   const zoom = Number(settings()?.zoom) || 1;
   const lit = (id, color) => view.hot === id ? t.foreground : color;
   const scoped = sp.filter((s) => scope.includes(s.id));
@@ -126,25 +126,13 @@ export function inboxList(view, t, model, drag, draw, cx) {
     }).on_mouse_move((_e, cx) => aim(null, cx))))
     .children(lane("snoozed", napRows, (a) => slim(a), 0));
   // With nothing to clear the button goes, and a gone element hears no pointer-leave: drop its hover.
-  if (doomed.length === 0 && view.hot === "settled-clear") view.hot = null;
-  const clearButton = doomed.length > 0 && tip(view, t, "settled-clear", "Clear settled agents", stop(view, t, "settled-clear", h_flex().id("settled-clear").h(20).px(6).flex_none().items_center().rounded(4).text_size(11)
+  if (!canClear && view.hot === "settled-clear") view.hot = null;
+  const clearButton = canClear && tip(view, t, "settled-clear", "Clear settled agents", stop(view, t, "settled-clear", h_flex().id("settled-clear").h(20).px(6).flex_none().items_center().rounded(4).text_size(11)
     .text_color(lit("settled-clear", t.dim)).on_hover(glow(view, "settled-clear"))
     .role("button").accessibility_label("Clear settled agents")
     .on_click((_e, cx) => {
       cx.stop_propagation();
-      const targets = clearTargets(view, view.compute(cx)).map(a => [a.address, a.pane]);
-      if (!targets.length) return cx.notify();
-      view.hot = null; // The dialog covers it, before the pointer can report leaving it.
-      const ask = {
-        title: `Close ${targets.length} terminal${targets.length === 1 ? "" : "s"}?`,
-        detail: "This ends the terminals of your settled agents. The tab you're on stays.",
-        yes: "Close",
-        // The address/pane pairs live only with this dialog, including in the standalone Inbox.
-        command: { name: `t3-inbox.clear:${JSON.stringify(targets)}` },
-      };
-      // The layout's T3 dialog is t3-actions'; published alone (no `home` prop) this mod has only the shipped one.
-      openOverlay(props()?.home ? { mod: "t3-actions", kind: "dialog", frame: "none", width: 512, props: { actions: "confirm", ...ask } }
-        : { mod: "confirm", kind: "dialog", props: ask });
+      requestClear(view, cx);
       cx.notify();
     })
     .child("Clear"), 4));

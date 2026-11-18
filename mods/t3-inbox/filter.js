@@ -1,7 +1,8 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Popover, Input } from "gpui-base";
-import { spaces, machines, shared, run, props, openOverlay } from "herdr";
+import { spaces, shared, run, props } from "herdr";
 import { projectMark } from "./project.js";
+import { newSpaceButton } from "./new-space.js";
 import { glow, tip } from "./tip.js";
 import { stop, pressed, justClosed } from "./focus.js";
 import { step, scrollList } from "./list.js";
@@ -36,8 +37,7 @@ export function inboxTop(view, t, model) {
   // A space's mark, as t3-spaces draws it.
   const avatar = (id, name, size) => projectMark("mods/t3-inbox", sp.find((s) => s.id === id) ?? { name: name ?? "" }, size, t, ps);
   // T3's top row: search on the left, then the space filter, new space and new tab.
-  const asks = props()?.newMenu && machines().length > 1;
-  const tool = (id, label, icon, closed, onOpen, action = undefined) => trigger(view, t, id, { icon: `mods/t3-inbox/icons/${icon}.svg`, label, closed, onOpen, action });
+  const tool = (id, label, icon, options) => trigger(view, t, id, { icon: `mods/t3-inbox/icons/${icon}.svg`, label, ...options });
   // The filter shows what it filters to: one avatar, two overlapping, or the plain filter icon.
   const scoped = sp.filter((s) => scope.includes(s.id)), found = view.matches();
   const choice = (s, i) => {
@@ -107,13 +107,9 @@ export function inboxTop(view, t, model) {
       .child(div().child("Search"))))
     .child(h_flex().flex_none().items_center()
     .child(tip(view, t, "inbox-scope", "Filter by space", filter, { off: view.scopeOpen, hint: "Shift+click to pick several", below: true }))
-    // The layout's menu asks which machine, as its mod.json places it; the shipped one can't, so docked alone it's the active space's.
-    .child(tool("inbox-new-space", "New space", "folder-plus", closedKey(props()?.newMenu, "pick"), () => {
-      if (!asks) { run("space.new"); return false; }
-      openOverlay({ mod: props().newMenu, kind: "popup", frame: "none", at: /** @type {any} */ ("top"), offset: 96, width: 576, height: 420, props: { pick: true } });
-    }, asks ? null : "space.new"))
+    .child(tool("inbox-new-space", "New space", "folder-plus", newSpaceButton(props()?.newMenu)))
     // The layout passes its own menu; docked alone, the shipped one.
-    .child(tool("inbox-new-tab", "New tab", "square-pen", closedKey(props()?.newMenu ?? "new-menu"), () => run("mod.open", { name: props()?.newMenu ?? "new-menu" }))));
+    .child(tool("inbox-new-tab", "New tab", "square-pen", { closed: closedKey(props()?.newMenu ?? "new-menu"), onOpen: () => run("mod.open", { name: props()?.newMenu ?? "new-menu" }) })));
 
 
   return top;

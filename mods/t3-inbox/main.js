@@ -88,7 +88,7 @@ export default class Inbox extends View {
     cx.spawn(async (cx) => {
       for (;;) {
         const command = await nextCommand();
-        if (command === "settle") /** @type {any} */ (this).settleKey?.(cx);
+        if (command === "settle") this.settleKey(cx);
         else if (command.startsWith("clear:")) this.clearSettled(command.slice("clear:".length), cx);
         else if (command.startsWith("custom-snooze:")) this.customSnooze(command.slice("custom-snooze:".length), cx);
         else if (command === "undo") this.undo(cx);
@@ -104,6 +104,10 @@ export default class Inbox extends View {
   pick(s, shift, cx) { pickInboxSpace(this, s, shift, cx); }
 
   clearSettled(answer, cx) { confirmClear(this, answer, cx); }
+
+  settleKey(cx) {
+    inboxActions(this, this.compute(cx)).settleInView(cx);
+  }
 
   customSnooze(answer, cx) {
     inboxActions(this, this.compute(cx)).customSnooze(answer, cx);

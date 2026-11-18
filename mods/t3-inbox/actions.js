@@ -98,12 +98,12 @@ export function inboxActions(view, model) {
     if (a && term.has(a.address) && state(a) !== "blocked" && at > Date.now()) snooze(a, at, cx);
   };
   // The settle key: the agent in view, as its card's Settle (finished) or its settled row's undo.
-  view.settleKey = (cx) => {
+  const settleInView = (cx) => {
     const a = every.find(viewing);
     if (!a) return;
     if (settledAt(a)) unsettle(a, cx);
     else if (!busy(a)) settle([a], cx);
   };
 
-  return { away, repin, unsettle, go, settle, pick, customSnooze };
+  return { away, repin, unsettle, go, settle, pick, customSnooze, settleInView };
 }

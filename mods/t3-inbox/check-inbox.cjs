@@ -1105,6 +1105,20 @@ test("a sub-agent in view with no row of its own lights its parent's card, as T3
   assert.match(f.mod.pending.settled.A ?? "", /^\d+:/, "the settle key acts on it too");
 });
 
+for (const before of ["no draw", "stale draw", "busy", "settled"]) {
+  test(`standalone Settle takes its own snapshot: ${before}`, async () => {
+    const f = fixture(), a = f.add("A", "done"), b = f.add("B", "done");
+    f.flush(); // Start the standalone command listener.
+    a.focused = true;
+    if (before !== "no draw") f.render();
+    f.rows[0] = { ...a, focused: false };
+    f.rows[1] = { ...b, focused: true, status: before === "busy" ? "working" : b.status };
+    if (before === "settled") f.label("B", "settled", "500:0");
+    await f.command("t3-inbox.settle");
+    assert.deepEqual(f.labelled, before === "busy" ? [] : [before === "settled" ? "label B settled=" : "label B settled=1000:0"]);
+  });
+}
+
 test("a mod pane in view, a review in a tab of its own, lights no card: Herdr's agent then falls back to the first", () => {
   const f = fixture(); f.add("A", "idle", 300); f.add("B", "idle", 200);
   f.context.focused = () => ({ pane: "pm", tab: "own", terminal: null, agent: "A" }); f.render();

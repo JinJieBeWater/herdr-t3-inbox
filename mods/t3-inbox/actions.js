@@ -7,7 +7,7 @@ import { KEY } from "./store.js";
 import { pinList, unpin, putBack } from "./pins.js";
 import { ownStatus, stillSettled } from "./tree.js";
 
-// A pane must still belong to a settled agent and stay outside the viewed tab.
+// Clear needs the core's settled label, even when the shelf already shows a pending Settle.
 export function clearTargets(view, { put, viewing, f, sp, ps, term, all, kids }) {
   const tabNow = f?.tab ?? sp.find(s => s.active)?.tabs.find(c => c.active)?.id;
   const byPane = new Map(ps.map(p => [p.pane, p]));
@@ -15,8 +15,8 @@ export function clearTargets(view, { put, viewing, f, sp, ps, term, all, kids })
     if (!a.pane || viewing(a) || a.tab === tabNow) return false;
     const p = byPane.get(a.pane), k = term.get(a.address);
     if (p?.terminal !== a.address || p.tab !== a.tab || !k) return false;
-    const settled = view.pending.settled[a.address] ?? k.labels?.settled;
-    return stillSettled({ turn: k.turn, labels: { settled } }, ownStatus(a.status, a.address, all), kids.get(a.address));
+    if (view.pending.settled[a.address] !== undefined) return false;
+    return stillSettled(k, ownStatus(a.status, a.address, all), kids.get(a.address));
   });
 }
 

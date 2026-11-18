@@ -277,6 +277,51 @@ test("Clear confirms terminals, as closing a tab does", () => {
   assert.deepEqual([opened[0].props.title, opened[0].props.yes], ["Close 2 terminals?", "Close"]);
 });
 
+for (const [name, dialog] of [["standalone Inbox", "confirm"], ["layout Inbox", "t3-actions"]]) {
+  test(`Clear skips a Settle still waiting for the core in ${name}`, async () => {
+    const f = fixture(), a = f.add("A"), b = f.add("B");
+    a.tab = "ta"; b.tab = "tb";
+    f.mod.open = true;
+    f.context.panes = () => [...f.rows.map(a => ({ pane: a.pane, tab: a.tab, terminal: a.address })), { pane: "ps", tab: "shell" }];
+    f.context.spaces = () => [{ id: "s1", name: "One", active: true, tabs: ["ta", "tb", "shell"].map(id => ({ id })) }];
+    f.context.focused = () => ({ tab: "shell", pane: "ps" });
+    if (dialog === "t3-actions") f.context.props = () => ({ home: "t3-tabs.home" });
+    const opened = [];
+    f.context.openOverlay = o => opened.push(o);
+    let refuse;
+    f.context.hc = args => {
+      if (args[1] === "A") return new Promise(resolve => { refuse = resolve; });
+      f.label("B", "settled", args[2].slice("settled=".length));
+      return Promise.resolve({ code: 0 });
+    };
+
+    const settle = address => {
+      f.mod.hovered = address;
+      f.render();
+      f.event(`settle-${address}`, "on_click");
+      f.flush();
+    };
+    settle("A");
+    f.render();
+    assert.deepEqual(slims(find(f.tree, "settled")), ["A"], "Settle is displayed while the label write waits");
+    const clearWhileWaiting = find(f.tree, "settled-clear");
+    settle("B");
+    await new Promise(setImmediate);
+    f.render();
+    f.event("settled-clear", "on_click");
+    await f.command(opened[0].props.command.name);
+    refuse({ code: 1, stderr: "write denied" });
+    await new Promise(setImmediate);
+    f.render();
+
+    assert.deepEqual(kit.plain(f.calls), [["pane.close", { pane: "B" }]], "only the core-confirmed terminal receives a close command");
+    assert.equal(clearWhileWaiting, null, "a pending-only shelf has no Clear button");
+    assert.equal(opened[0].mod, dialog);
+    assert.equal(opened[0].props.title, "Close 1 terminal?");
+    assert.deepEqual(f.active(), ["A"], "refusal returns the pending card to Active");
+  });
+}
+
 for (const [change, redraw, closes] of [
   ["another terminal becomes settled", true, ["A"]],
   ["the terminal resumes work", false, []],

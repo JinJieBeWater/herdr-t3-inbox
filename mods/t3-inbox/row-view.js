@@ -7,7 +7,7 @@ import { glow, tip, tipMark, keyOf } from "./tip.js";
 import { MOTION } from "./motion.js";
 import { detailsLive, detailsFor, detailsLine, detailsCard } from "./details.js";
 import { programIcon } from "./program.js";
-import { statusMark } from "./status-mark.js";
+import { statusMark, took } from "./status-mark.js";
 import { stop, within } from "./focus.js";
 import { snoozeButton } from "./snooze.js";
 import { SLIM } from "./list-view.js";
@@ -18,12 +18,6 @@ import { worktreeLabel } from "./worktree.js";
 
 // The settle key: the layout's tab bar holds it; a standalone Inbox, its own command.
 const settleKey = () => keyOf("t3-tabs.settle") ? "t3-tabs.settle" : "t3-inbox.settle";
-
-// How long it's been working, as T3's Working pill: 9s, 4m, 1h 5m.
-function took(ms, now) {
-  const s = Math.max(0, Math.floor((now - ms) / 1000)), m = Math.floor(s / 60);
-  return s < 60 ? `${s}s` : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
-}
 
 // Time left on a snooze, rounded up as T3's: 10m, 3h, 2d.
 function left(ms, now) {

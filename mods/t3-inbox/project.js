@@ -9,6 +9,7 @@ import { createHash } from "crypto";
 import * as fs from "fs/promises";
 import { KEY } from "./store.js";
 import { alpha } from "./color.js";
+import { prepareSpace } from "./space-arrival.js";
 
 // T3's project colors in its order, each as Tailwind's 400 (dark themes) and 600 (light).
 const PALETTE = [
@@ -111,7 +112,10 @@ export function placeOf(s, ps) {
 }
 
 // A terminal tab where the space is now, as its mark and folder say: Herdr's tab.new alone starts where the space was made.
-export const newTab = (s) => run("tab.new", { space: s.id, folder: placeOf(s, panes()) });
+export const newTab = (s) => {
+  prepareSpace(s.id);
+  return run("tab.new", { space: s.id, folder: placeOf(s, panes()) });
+};
 
 // Shared KEY.spaceIcons: [machine, folder] -> the copy's path or null, so every mod shows what one found.
 // shortcut: folders with an icon that no space uses any more stay listed; prune them if the list ever grows noticeably.

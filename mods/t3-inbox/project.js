@@ -28,7 +28,7 @@ function monogram(name) {
 }
 
 // As T3: the name, folded, hashed into the palette, so a name has one color everywhere.
-export function tint(name, dark) {
+export function monogramColor(name, dark) {
   const seed = name.normalize("NFKC").trim().toLocaleLowerCase("en-US") || "project";
   let i = 0;
   for (const g of seed) i = (i * 31 + g.codePointAt(0)) % PALETTE.length;
@@ -51,7 +51,7 @@ export function projectMark(mod, s, size, t, ps, follow) {
   // Nothing to spell: T3's plain folder.
   if (!text) return h_flex().size(size).flex_none().items_center().justify_center()
     .child(svg(`${mod}/icons/folder.svg`).size(size).text_color(t.dim));
-  const color = tint(s.name, isDark(t));
+  const color = monogramColor(s.name, isDark(t));
   // As T3's ProjectMonogram: the color on a 14% wash of itself, bold monospace at its 8.25 in a 16 tile.
   return h_flex().size(size).flex_none().rounded(size / 4).bg(alpha(color, "24")).items_center().justify_center()
     .font_family(settings().font_family ?? "JetBrains Mono").font_bold().text_size(size * 8.25 / 16).text_color(color)

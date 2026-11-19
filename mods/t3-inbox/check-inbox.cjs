@@ -6,7 +6,7 @@ const { test } = require("node:test");
 
 const kit = require("./check-kit.js");
 const element = kit.elements({ args: "all" }), { find } = kit;
-// A mod as Herdr would load it (kit.bundle), button.js's private tint kept apart from project.js's exported one.
+// A mod as Herdr would load it (kit.bundle), button.js's helpers kept to the three the inbox imports.
 const bundle = (dir, file = "main.js", seen = new Set()) => kit.bundle((name) => fs.readFileSync(path.join(dir, name), "utf8"), file,
   (name, src) => name === "button.js" ? "const { button, radiusOf, GROUP_GAP } = (() => {\n" + kit.strip(src) + "\nreturn { button, radiusOf, GROUP_GAP }; })();" : null, seen);
 
@@ -1135,12 +1135,12 @@ test("a space's monogram is its first glyph, in T3's color for the same name", (
   // T3's own cases (apps/mobile/src/lib/projectIcon.test.ts), its colors as Tailwind's 400.
   for (const [name, text, color] of [["t3code", "T", "#2dd4bf"], ["Auto Monogram", "A", "#a3e635"], ["blitzdiff", "B", "#f472b6"],
     ["uoalbumdotclub", "U", "#9ca3af"], ["  Tagium  ", "T", "#a3e635"], ["Café Ünïcode", "C", "#e879f9"], ["web2 app", "W", "#34d399"]]) {
-    assert.deepEqual([run(`monogram(${JSON.stringify(name)})`), run(`tint(${JSON.stringify(name)}, true)`)], [text, color], name);
+    assert.deepEqual([run(`monogram(${JSON.stringify(name)})`), run(`monogramColor(${JSON.stringify(name)}, true)`)], [text, color], name);
   }
   assert.deepEqual([run(`monogram("智能算量")`), run(`monogram("~/dev")`)], ["智", "D"]);
   assert.equal(run(`monogram("~")`), "", "nothing to spell: the folder instead");
   f.add("A"); f.render();
-  const tile = holding(f.tree, "O"), color = run('tint("One", true)');
+  const tile = holding(f.tree, "O"), color = run('monogramColor("One", true)');
   assert.deepEqual([tile.style.size[0], tile.style.bg[0], tile.style.text_color[0], tile.style.text_size[0]], [16, color + "24", color, 8.25], "T3's 14% wash of the color, the card's 16px, its 8.25 type");
 });
 

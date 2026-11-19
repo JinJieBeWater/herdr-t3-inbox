@@ -1,7 +1,7 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { settings, layout } from "herdr";
-import { glow } from "./tip.js";
+import { glow, undoLabel } from "./tip.js";
 import { MOTION, planMotion, flying } from "./motion.js";
 import { focusStop, onStop, stop } from "./focus.js";
 import { inboxTop } from "./filter.js";
@@ -131,7 +131,7 @@ export function inboxList(view, t, model, drag, draw, cx) {
         cx.stop_propagation();
         view.undo(cx);
       })
-      .child("Undo")));
+      .child(undoLabel("t3-tabs.undo", "t3-inbox.undo"))));
   const top = inboxTop(view, t, model);
   const body = v_flex().id("inbox-list").relative().flex_1().min_h(0).px(8).pt(LIST_TOP).pb(8).overflow_y_scroll()
     .when(Boolean(view.listScroll), (el) => el.track_scroll(view.listScroll))

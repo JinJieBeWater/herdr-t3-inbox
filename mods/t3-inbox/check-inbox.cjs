@@ -638,6 +638,15 @@ test("Undo pressed just before five seconds runs before expiry, without waiting 
   assert.equal(undone, 1);
 });
 
+test("at Home the settle key leaves a live Settled notice alone: Undo has its own key, as T3's", () => {
+  const f = fixture(); f.context.props = () => ({ home: "t3-tabs.home" }); let undone = 0;
+  f.state["t3-tabs.home"] = "home"; f.context.focused = () => ({ space: "home" });
+  f.mod.remember("Settled", 1, () => undone++, f.cx);
+  f.settle();
+  assert.equal(undone, 0);
+  assert.ok(f.state["t3.notice"]?.live, "the notice stays for its Undo");
+});
+
 test("a pause for the person keeps the run's Working place", () => {
   const f = fixture(), a = f.add("A", "working", 100); f.add("B", "working", 200); f.mod.workOpen = true;
   f.render(); a.status = "blocked"; f.render(1100); assert.deepEqual(f.active(), ["A"]);
@@ -1295,6 +1304,9 @@ test("settling shows T3's undo notice over the first shelf for 5s; Undo puts the
   assert.ok(find(find(f.tree, "inbox-shelf-start"), "undo-notice-undo"), "over the first shelf's header, as T3 hosts it");
   const undo = find(f.tree, "undo-notice-undo");
   assert.ok("font_medium" in undo.style && "underline" in undo.hoverStyle, "as T3's InlineButton: medium, underlined on hover");
+  assert.deepEqual(texts(undo), ["Undo"], "no key bound, as T3's: just Undo");
+  f.context.keys = () => [{ action: "t3-tabs.undo", keys: "cmd-shift-z" }]; f.render(1016);
+  assert.deepEqual(texts(find(f.tree, "undo-notice-undo")), ["⇧⌘Z to undo"], "a bound key goes in the button");
   // A second settle soon after joins the same notice.
   f.rows.find((x) => x.address === "B").focused = true; a.focused = false; f.settle(); f.render(2000);
   assert.equal(texts(note())[0], "Settled 2 agents,");

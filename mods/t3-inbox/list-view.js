@@ -34,13 +34,13 @@ export function searchList(view, t, model, results) {
       .when(time > 0, (el) => el.child(div().flex_none().text_size(12).text_color(t.dim).child(ago(time, now)))));
   }
   if (!results.length) list.child(div().px(8).py(24).text_center().text_size(12).text_color(t.dim).child("No matching cards."));
-  view.ticking = false;
+  view.clockAt = Infinity;
   view.revealDrawn(inView, indices, view.inline.query);
   return { top: inboxTop(view, t, model), list };
 }
 
 export function inboxList(view, t, model, drag, draw, cx) {
-  const { list, every, sp, scope, kids, working, pinned, out, work, nap, put, busyRows, napRows, busy } = model;
+  const { now, list, every, sp, scope, kids, running, started, pinned, out, work, nap, put, busyRows, napRows, busy } = model;
   const { d, dragging, lifted, plan, cardH, rows, hot, aim, gap, others, placeholder, boundary, pinTo } = drag;
   const { card, slim } = draw;
   const showMore = view.open && put.length > view.limit;
@@ -116,7 +116,11 @@ export function inboxList(view, t, model, drag, draw, cx) {
     return div().id(`leaving-${x.key}-${view.motion.step}`).absolute().left(8).right(8).top(x.y + (away ? x.travel ?? 0 : 0))
       .opacity(away ? 0 : 1).transition("top", MOTION).transition("opacity", MOTION).child(drawn);
   };
-  view.ticking = busyRows.length > 0 || pinned.some(working);
+  // When a drawn Working time next reads differently: by the second under a minute, then by the minute (status-mark.js took).
+  view.clockAt = Math.min(Infinity, ...[...pinned, ...busyRows].filter(running).map(started).filter((at) => at > 0 && at < Infinity).map((at) => {
+    const s = Math.max(0, Math.floor((now - at) / 1000));
+    return at + (s < 60 ? s + 1 : (Math.floor(s / 60) + 1) * 60) * 1000;
+  }));
   // T3 shows the undo notice in the sidebar footer's row, so it covers nothing: the layout's footer (t3-chrome) draws it
   // from shared(KEY.notice). Docked alone, with no footer, it goes over the first shelf's header.
   const n = view.notice;

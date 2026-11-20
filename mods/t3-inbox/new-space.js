@@ -2,8 +2,9 @@
 import { machines, spaces, openOverlay, run } from "herdr";
 import { closedKey } from "./store.js";
 
-export function newSpacePlan() {
-  const all = spaces(), here = all.find((s) => s.active)?.machine ?? null;
+// `all`: spaces(), when the caller's draw has read it (each read copies the whole list).
+export function newSpacePlan(all = spaces()) {
+  const here = all.find((s) => s.active)?.machine ?? null;
   const layouts = new Map(machines().map(({ name, layout }) => [name, layout]));
   const others = [...layouts.keys(), ...all.map((s) => s.machine)].filter(Boolean).sort();
   const candidates = [...new Set([here, null, ...others])].map((machine) => ({
@@ -13,8 +14,8 @@ export function newSpacePlan() {
 }
 
 // A standalone sidebar without the New menu uses Herdr's command (on the active space's machine).
-export function newSpaceButton(menu) {
-  const plan = menu ? newSpacePlan() : null;
+export function newSpaceButton(menu, all = undefined) {
+  const plan = menu ? newSpacePlan(all) : null;
   return {
     closed: menu ? closedKey(menu, "pick") : undefined,
     action: plan?.ask ? undefined : "space.new",

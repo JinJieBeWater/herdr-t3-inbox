@@ -25,8 +25,8 @@ import { writeLabel } from "./labels.js";
 // A label write render keeps asking for waits this long (ms) after failing.
 const RETRY = 60000;
 
-function revealVisible({ rail, stack } = sidebarParts(layout())) {
-  return window()?.active && !rail?.hidden && !stack?.hidden && (!stack || stack.active === "inbox");
+function revealVisible({ rail, stack } = sidebarParts(layout()), active = window()?.active) {
+  return active && !rail?.hidden && !stack?.hidden && (!stack || stack.active === "inbox");
 }
 
 export default class Inbox extends View {
@@ -91,11 +91,11 @@ export default class Inbox extends View {
     cx.bind_keys(SEARCH_KEYS);
     // Takes the keyboard while a row is lifted, so Esc can put it back.
     this.keys = cx.focus_handle();
-    // "Working 9s" counts up only while such a card shows.
-    // Render says so again each time, so a list hidden meanwhile draws nothing.
+    // A Working time is drawn again once it reads differently (`clockAt`, list-view.js).
+    // Render says when again each time, so a list hidden meanwhile draws nothing.
     cx.timer.every(1000, (cx) => {
       if (props()?.home) this.compute(cx);
-      if (this.ticking) { this.ticking = false; cx.notify(); }
+      if (this.clockAt <= Date.now()) { this.clockAt = Infinity; cx.notify(); }
     });
     // The cards' times (5m, 2h) move on by the minute, as T3's do.
     cx.timer.every(60000, (cx) => cx.notify());
@@ -309,9 +309,11 @@ export default class Inbox extends View {
     const runs = agents(), all = terminals(), ps = panes(), sp = spaces(), f = focused();
     // `pane:<id>` is a mod card's address, in t3-inbox.rows too. Docked alone, keep the original one-card-per-agentless-tab rule.
     // Home's mod is no one's work, whatever it reports (docs/adr/0005).
-    const every = [...runs, ...sp.filter((s) => s.id !== shared(KEY.home)).flatMap((s) => s.tabs.flatMap((c) => {
-      const cards = ps.filter(x => x.tab === c.id && x.mod && programOf(x)?.inbox);
-      return (props()?.home ? cards : runs.some(a => a.tab === c.id) ? [] : cards.slice(0, 1)).map(p => ({ ...p,
+    const homeSpace = shared(KEY.home), withHome = props()?.home, modPanes = new Map();
+    for (const p of ps) if (p.mod) { const xs = modPanes.get(p.tab); if (xs) xs.push(p); else modPanes.set(p.tab, [p]); }
+    const every = [...runs, ...sp.filter((s) => s.id !== homeSpace).flatMap((s) => s.tabs.flatMap((c) => {
+      const cards = (modPanes.get(c.id) ?? []).filter((x) => programOf(x)?.inbox);
+      return (withHome ? cards : runs.some(a => a.tab === c.id) ? [] : cards.slice(0, 1)).map(p => ({ ...p,
         address: `pane:${p.pane}`, status: modStatus(p) ?? "idle", focused: p.pane === f?.pane,
         space: s.id, space_name: s.name, program: { name: p.title, ...programOf(p) } }));
     }))];
@@ -319,14 +321,14 @@ export default class Inbox extends View {
     // As T3's route reveal: an agent brought into view from elsewhere (a key, the picker, its pane) that the space
     // filter hides widens the filter to every space, kept. Not on the first draw, and a filter you pick isn't undone.
     // Only while the Inbox is the mode (or docked alone): moving about in Lists isn't bringing a card into view.
-    const sidebar = sidebarParts(layout()), { stack } = sidebar;
+    const sidebar = sidebarParts(layout()), { stack } = sidebar, inboxMode = !stack || stack.active === "inbox", active = window()?.active;
     const routeChanged = this.inView !== undefined && inView !== this.inView;
-    const searching = Boolean(this.inline.query), visible = revealVisible(sidebar);
+    const searching = Boolean(this.inline.query), visible = revealVisible(sidebar, active);
     // As in T3, a route reached while search replaces the list waits until the normal rows return.
     if (searching && routeChanged) this.searchRoute = visible ? inView : null;
     const normalRoute = !searching && (routeChanged || (this.searchRoute && this.searchRoute === inView));
     if (!searching || !visible) this.searchRoute = null;
-    if ((!stack || stack.active === "inbox") && normalRoute && inView && this.scope.length) {
+    if (inboxMode && normalRoute && inView && this.scope.length) {
       const a = every.find((x) => x.address === inView);
       if (a && !this.scope.includes(a.space)) { this.scope = []; localStorage.setItem("scope", "[]"); this.limit = FIRST; }
     }
@@ -356,13 +358,14 @@ export default class Inbox extends View {
     const pins = pinList();
     const wake = (a, cx) => this.setLabel("snoozed", a.address, "", cx);
     // A snooze ends on a failure in its tree (a program's error doesn't stay said), a new turn in view (the person gave
-    // it work), or being looked at once it has woken. A pin ends it too, as the pinning writes the label.
+    // it work), or, with the Inbox selected (docs/adr/0002), being looked at once it has woken. A pin ends it too, as the
+    // pinning writes the label.
     const failed = (a) => term.get(a.address)?.status === "error" || descendants(all, a.address).some((k) => k.status === "error");
     for (const a of every) {
       const until = napUntil(a);
       if (!until) continue;
-      const turned = window().active && viewing(a) && running(a) && ["idle", "done"].includes(this.changed[a.address]?.s);
-      if (failed(a) || turned || (window().active && viewing(a) && until <= now)) this.setLabelDue("snoozed", a.address, "", cx);
+      const turned = active && viewing(a) && running(a) && ["idle", "done"].includes(this.changed[a.address]?.s);
+      if (failed(a) || turned || (inboxMode && active && viewing(a) && until <= now)) this.setLabelDue("snoozed", a.address, "", cx);
     }
     const tabs = new Map(sp.flatMap((s) => s.tabs.map((c) => [c.id, c])));
     this.track(every.map((a) => ({
@@ -387,15 +390,14 @@ export default class Inbox extends View {
       this.nextWake = next;
       this.wakeTimer = next < Infinity ? cx.timer.after(Math.min(next - now, DAY), (cx) => { this.nextWake = null; cx.notify(); }) : null;
     }
-    if (publish) this.publishRows([...pinned, ...out, ...busyRows], [...napRows, ...rows], inView,
+    if (publish) this.publishRows(inboxMode, [...pinned, ...out, ...busyRows], [...napRows, ...rows], inView,
       [...pinned, ...out, ...work, ...nap, ...put]);
-    return { now, all, ps, sp, f, every, inView, scope, term, pins, wake, facts, ...fields, ...sections };
+    return { now, all, ps, sp, f, every, inView, inboxMode, scope, term, pins, wake, facts, ...fields, ...sections };
   }
 
   // `cards` lead the rows, and say how many: the tab bar's Settle goes on to the next of them (t3.settings).
-  publishRows(cards, rest, view, ordered) {
-    const { stack: mode } = sidebarParts(layout());
-    if (mode && mode.active !== "inbox") { this.agentOrder = null; return; }
+  publishRows(inboxMode, cards, rest, view, ordered) {
+    if (!inboxMode) { this.agentOrder = null; return; }
     const drawn = { order: [...cards, ...rest].map((a) => a.address), view, cards: cards.length };
     if (JSON.stringify(drawn) !== JSON.stringify(shared(KEY.inboxRows) ?? null)) setShared(KEY.inboxRows, drawn);
     const order = ordered.filter((a) => !a.mod).map((a) => a.address);
@@ -409,7 +411,7 @@ export default class Inbox extends View {
   render(cx) {
     if (props()?.customSnooze) return customView(this);
     const t = theme(), zoom = Number(settings()?.zoom) || 1;
-    const model = this.compute(cx, false), { pinned, out, busyRows, napRows, inView, work, nap, put } = model;
+    const model = this.compute(cx, false), { pinned, out, busyRows, napRows, inView, inboxMode, work, nap, put } = model;
     const tree = v_flex().id("t3-inbox-root").relative().size_full().min_h(0).bg(t.chrome).text_size(14)
       .on_size_change((size) => { this.height = size.height / zoom; this.width = size.width / zoom; });
     const cards = [...pinned, ...out, ...busyRows], ordered = [...pinned, ...out, ...work, ...nap, ...put];
@@ -418,7 +420,7 @@ export default class Inbox extends View {
     if (query) {
       // No cards request checkout data while the compact results are drawn.
       this.worktrees.frame().flush(cx);
-      this.publishRows(cards, [...napRows, ...model.rows], inView, ordered);
+      this.publishRows(inboxMode, cards, [...napRows, ...model.rows], inView, ordered);
       const results = inboxSearchResults(model, query);
       const at = results[this.inlineIndex(results)]?.a.address ?? null;
       if (at !== this.inline.at) {
@@ -429,7 +431,7 @@ export default class Inbox extends View {
       tree.child(top).child(list);
     } else {
       const actions = inboxActions(this, model), drag = inboxDrag(this, t, model, actions);
-      this.publishRows(cards, [...napRows, ...drag.rows], inView, ordered);
+      this.publishRows(inboxMode, cards, [...napRows, ...drag.rows], inView, ordered);
       drawn = new Set([...cards, ...napRows, ...drag.rows].map((a) => a.address));
       const rows = inboxRowView(this, t, model, actions, drag);
       const { top, list } = inboxList(this, t, model, drag, rows, cx);

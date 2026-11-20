@@ -30,7 +30,7 @@ export function inboxRowView(view, t, model, actions, drag) {
   const { settle, unsettle, away, pick, unpinRow } = actions;
   const { dragging, plan, verb, badge, swept, row, open, sweepFrom, justDropped } = drag;
   const zoom = Number(settings()?.zoom) || 1;
-  const title = namer();
+  const title = namer({ terminals: model.all, spaces: sp });
   const checkouts = view.worktrees.frame();
   const hover = (a) => (on, cx) => {
     if (on) { view.hovered = a.address; detailsFor(view, a.address, cx); }
@@ -81,7 +81,7 @@ export function inboxRowView(view, t, model, actions, drag) {
         machine && detailsLine(t, svg("mods/t3-inbox/icons/server.svg").size(12).flex_none().text_color(t.muted), machine),
         branch && detailsLine(t, gitMark(), branch),
         pic && detailsLine(t, div().flex_none().opacity(0.6).child(pic), a.program.name),
-        hasError && h_flex().gap(8).items_center().text_color(t.ansi1).child(statusMark(t, "error")).child("Error occurred"),
+        hasError && h_flex().gap(8).items_center().text_color(t.ansi1).child(statusMark("mods/t3-inbox", t, "error")).child("Error occurred"),
       ], { hide: Boolean(view.hot) || view.detailsHold === a.address }).ml(4)));
   };
   const worktreeMark = (a, root, branch, ghost) => {
@@ -133,10 +133,10 @@ export function inboxRowView(view, t, model, actions, drag) {
     // Lifted, or marked by a sweep, the corner says what letting go will do instead.
     // The state or the time, faded out on hover where Settle fades in over it, as T3's corner.
     const word = running(a)
-        ? pill(t.working, svg("mods/workspace-chrome/spinner.svg").size(16).flex_none().text_color(t.working).spin(900),
+        ? pill(t.working, svg("mods/t3-inbox/icons/circle-dashed.svg").size(16).flex_none().text_color(t.working),
           "Working", started(a) > 0 && started(a) < Infinity ? took(started(a), now) : null)
         : st === "blocked"
-          ? pill(failed ? t.ansi1 : t.blocked, statusMark(t, failed ? "error" : "blocked", 16), attention ?? "Needs you", null)
+          ? pill(failed ? t.ansi1 : t.blocked, statusMark("mods/t3-inbox", t, failed ? "error" : "blocked", 16), attention ?? "Needs you", null)
           : wokeMark
             || (st === "done"
               ? pill(t.ansi2, svg("mods/t3-inbox/icons/circle-check.svg").size(16).flex_none().text_color(t.ansi2), "Done")

@@ -19,13 +19,15 @@ export const programOf = (x) => x.mod ? shared(`${x.mod}.program`) ?? null : x.p
 // What a mod pane reports of its tab in shared("<mod>.status"), as the word an agent would.
 export const modStatus = (x) => shared(`${x.mod}.status`)?.[x.tab] ?? null;
 
-// Snapshot once per render; the returned function takes an agent or a pane (status set = an agent).
-export function namer() {
-  const term = new Map(terminals().map((k) => [k.address, k]));
-  const tabs = new Map(spaces().flatMap((s) => s.tabs.map((c) => [c.id, { ...c, space: s.name }])));
+// Snapshot once per render; the returned function takes an agent or a pane (status set = an agent). `held`: the lists the
+// caller's draw has read, as each read copies the whole list; one it leaves out is read here.
+/** @param {{ terminals?: any[], spaces?: any[], agents?: any[] }} [held] */
+export function namer({ terminals: all = terminals(), spaces: sp = spaces(), agents: every = agents() } = {}) {
+  const term = new Map(all.map((k) => [k.address, k]));
+  const tabs = new Map(sp.flatMap((s) => s.tabs.map((c) => [c.id, { ...c, space: s.name }])));
   const sub = (address) => term.get(term.get(address)?.parent)?.state === "live";
   const leads = new Map();
-  for (const a of agents()) if (!sub(a.address)) leads.set(a.tab, (leads.get(a.tab) ?? 0) + 1);
+  for (const a of every) if (!sub(a.address)) leads.set(a.tab, (leads.get(a.tab) ?? 0) + 1);
   return (x) => {
     // A mod pane goes by the title its mod gives it in shared("<mod>.titles"), keyed by its tab; else its folder name.
     if (x.mod) return shared(`${x.mod}.titles`)?.[x.tab] || x.title;

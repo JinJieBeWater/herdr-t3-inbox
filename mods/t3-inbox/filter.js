@@ -43,7 +43,7 @@ function matchQuality(value, query, midWord) {
 export function inboxSearchResults(model, query) {
   query = fold(query);
   if (!query) return [];
-  const name = namer();
+  const name = namer({ terminals: model.all, spaces: model.sp });
   const branches = new Map(model.ps.map((p) => [p.pane, p.branch]));
   return [...model.pinned, ...model.out, ...model.work, ...model.nap, ...model.put].flatMap((a) => {
     const title = name(a);
@@ -153,7 +153,7 @@ export function inboxTop(view, t, model) {
     .child(search)
     .child(h_flex().flex_none().items_center()
     .child(tip(view, t, "inbox-scope", "Filter by space", filter, { off: view.scopeOpen, hint: "Shift+click to pick several", below: true }))
-    .child(tool("inbox-new-space", "New space", "folder-plus", newSpaceButton(props()?.newMenu)))
+    .child(tool("inbox-new-space", "New space", "folder-plus", newSpaceButton(props()?.newMenu, sp)))
     // The layout passes its own menu; docked alone, the shipped one.
     .child(tool("inbox-new-tab", "New tab in…", "square-pen", { closed: closedKey(props()?.newMenu ?? "new-menu"), onOpen: () => run("mod.open", { name: props()?.newMenu ?? "new-menu" }) })));
 

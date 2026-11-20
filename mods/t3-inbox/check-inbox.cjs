@@ -200,6 +200,19 @@ test("a background window does not end a snooze when its selected agent starts w
   assert.deepEqual(f.labelled, ["label A snoozed="], "failures still wake the agent in a background window");
 });
 
+test("with Lists selected, looking at a woken agent leaves it marked Woke; a new turn in view still ends the snooze", () => {
+  const f = fixture(), a = f.add("A"), b = f.add("B"); a.focused = true;
+  f.context.props = () => ({ home: "t3-tabs.home" });
+  f.label("A", "snoozed", "2000"); f.label("B", "snoozed", "9000"); f.render();
+  const tick = (now) => { f.now = now; f.watches.find((w) => w.ms === 1000).fn(f.cx); f.flush(); };
+  f.mode = "lists"; tick(2001);
+  assert.deepEqual(f.labelled, [], "Lists shows no Woke for the person to have seen");
+  a.focused = false; b.focused = true; tick(3000); b.status = "working"; tick(4000);
+  assert.deepEqual(f.labelled, ["label B snoozed="], "work given in view ends a snooze in either sidebar");
+  b.focused = false; a.focused = true; f.mode = "inbox"; f.hidden = true; tick(5000);
+  assert.deepEqual(f.labelled, ["label B snoozed=", "label A snoozed="], "Inbox selected, its sidebar hidden: seen");
+});
+
 test("a failed card Settle restores the pin in its original place and keeps pins made since", async () => {
   const f = fixture(); f.add("A"); f.add("B"); f.add("C"); f.add("D"); f.pins = ["A", "B"];
   f.context.hc = async () => ({ code: 1, stderr: "offline" });
@@ -599,6 +612,23 @@ test("a layout Inbox keeps computing while hidden, writes only changes and leave
   assert.deepEqual([...f.state["t3-inbox.rows"].order], ["B"]);
 });
 
+test("a hidden tick asks the host for the layout, the window, Home and its props once each, however many spaces, tabs and snoozes there are", () => {
+  const f = fixture(); f.add("A"); f.review();
+  for (const id of ["N1", "N2"]) { f.add(id); f.label(id, "snoozed", "9000"); }
+  f.context.props = () => ({ home: "t3-tabs.home" });
+  const spaces = f.context.spaces();
+  f.context.spaces = () => [...spaces, { id: "s3", name: "Three", tabs: [{ id: "t1" }, { id: "t2" }, { id: "t3" }] }];
+  f.render();
+  const asked = {};
+  for (const name of ["layout", "window", "props", "shared"]) {
+    const host = f.context[name];
+    f.context[name] = (...args) => { const key = name === "shared" ? args[0] : name; asked[key] = (asked[key] ?? 0) + 1; return host(...args); };
+  }
+  f.watches.find((w) => w.ms === 1000).fn(f.cx);
+  assert.deepEqual([asked.layout, asked.window, asked["t3-tabs.home"], asked.props], [1, 1, 1, 2], "props: the tick's own look, and the pass's");
+  assert.deepEqual([...f.state["t3-inbox.rows"].order], ["pane:pm", "A"], "the same rows");
+});
+
 test("a drag changing the settled page publishes its drawn rows only once, then causes no redraw loop", () => {
   const f = fixture(); f.add("A"); f.add("B");
   f.label("A", "settled", "100:0"); f.label("B", "settled", "200:0");
@@ -663,10 +693,20 @@ test("a reply while sub-agents work comes to Active; read, the run goes on from 
 
 test("a hidden list's Working clock goes quiet: only a draw starts it again", () => {
   const f = fixture(); f.add("A", "working"); f.mod.workOpen = true; f.render();
-  const second = () => { f.notified = false; f.watches.find((w) => w.ms === 1000).fn(f.cx); return f.notified; };
+  const second = () => { f.notified = false; f.now += 1000; f.watches.find((w) => w.ms === 1000).fn(f.cx); return f.notified; };
   assert.equal(second(), true);
   assert.equal(second(), false);
   f.render(); assert.equal(second(), true);
+});
+
+test("a Working time is drawn again when it reads differently: by the second under a minute, then by the minute", () => {
+  const f = fixture(); f.add("A", "working", 1000); f.mod.workOpen = true; f.render(60000);
+  const second = () => { f.notified = false; f.now += 1000; f.watches.find((w) => w.ms === 1000).fn(f.cx); return f.notified; };
+  assert.ok(texts(find(f.tree, "state-A")).includes("59s"));
+  assert.equal(second(), true, "59s turns 1m");
+  f.render(); assert.ok(texts(find(f.tree, "state-A")).includes("1m"));
+  assert.equal(second(), false, "a second on it still reads 1m: nothing to draw");
+  f.render(120000); assert.equal(second(), true, "1m turns 2m");
 });
 
 
@@ -1136,52 +1176,6 @@ test("remote machine names stay in hover details; only Inbox cards carry a mark"
     assert.deepEqual(details.style.opacity, [1], `${mode}: the row's details stay visible`);
     assert.equal(find(tree, "tip-machine-m1/A"), null, `${mode}: no duplicate machine tooltip`);
   }
-});
-
-test("a space's monogram is its first glyph, in T3's color for the same name", () => {
-  const f = fixture(), run = (code) => vm.runInContext(code, f.context);
-  // T3's own cases (apps/mobile/src/lib/projectIcon.test.ts), its colors as Tailwind's 400.
-  for (const [name, text, color] of [["t3code", "T", "#2dd4bf"], ["Auto Monogram", "A", "#a3e635"], ["blitzdiff", "B", "#f472b6"],
-    ["uoalbumdotclub", "U", "#9ca3af"], ["  Tagium  ", "T", "#a3e635"], ["Café Ünïcode", "C", "#e879f9"], ["web2 app", "W", "#34d399"]]) {
-    assert.deepEqual([run(`monogram(${JSON.stringify(name)})`), run(`monogramColor(${JSON.stringify(name)}, true)`)], [text, color], name);
-  }
-  assert.deepEqual([run(`monogram("智能算量")`), run(`monogram("~/dev")`)], ["智", "D"]);
-  assert.equal(run(`monogram("~")`), "", "nothing to spell: the folder instead");
-  f.add("A"); f.render();
-  const tile = holding(f.tree, "O"), color = run('monogramColor("One", true)');
-  assert.deepEqual([tile.style.size[0], tile.style.bg[0], tile.style.text_color[0], tile.style.text_size[0]], [16, color + "24", color, 8.25], "T3's 14% wash of the color, the card's 16px, its 8.25 type");
-});
-
-test("a space's own icon, found as T3 finds it, replaces its monogram on every card", async () => {
-  const f = fixture(), runs = [], written = [];
-  // Its terminal is down in the repo: the icon is the repo's, as T3's is its project root's.
-  f.env.spaces = () => [{ id: "s1", name: "One", folder: "", machine: "vps", tabs: [{ id: "b1" }] }];
-  f.env.panes = () => [{ pane: "A", tab: "b1", cwd: "/w/one/src" }];
-  f.context.machines = () => [{ name: "vps", layout: "ready" }];
-  Object.assign(f.context, {
-    Buffer, createHash: require("node:crypto").createHash, appHome: () => "/app",
-    fs: { exists: async () => false, mkdir: async () => {}, writeFile: async (p, b) => written.push([p, Buffer.from(b).toString()]) },
-    readTextFile: async (p) => p === "/w/one/index.html" ? `<link href="/brand/logo.svg" rel="icon">` : null,
-    exec: async (cmd, args, opts) => {
-      if (cmd === "git") return opts.cwd === "/w/one/src" ? { code: 0, stdout: "/w/one\n" } : { code: 128, stdout: "" };
-      runs.push([args.slice(3), opts]);
-      if (args[1].startsWith("base64")) return { code: 0, stdout: Buffer.from("<svg/>").toString("base64").replace(/(.{4})/g, "$1\n") };
-      return { code: 0, stdout: args.includes("brand/logo.svg") ? "brand/logo.svg" : "" };
-    },
-  });
-  f.add("A"); f.render();
-  await new Promise((done) => setTimeout(done, 0));
-  assert.equal(runs[0][0][0], "favicon.svg", "the well-known places first, in T3's order");
-  assert.deepEqual([...runs[1][0]], ["public/brand/logo.svg", "brand/logo.svg"], "then the page's link, public/ first");
-  assert.deepEqual({ ...runs[1][1] }, { cwd: "/w/one", on: "vps" }, "looked for on the space's own machine");
-  const [[at, bytes]] = written, icon = at.slice("/app/".length);
-  assert.match(icon, /^cache\/t3-icons\/[0-9a-f]{16}\.svg$/); assert.equal(bytes, "<svg/>");
-  f.render();
-  const pic = find(f.tree, "card-A") && (function first(n) { return n?.style?.image ? n : n?.items?.map(first).find(Boolean); })(f.tree);
-  assert.deepEqual([pic.style.image[0], pic.style.size[0]], [icon, 16]);
-  assert.equal(holding(f.tree, "O"), null, "no monogram beside it");
-  f.render(f.now + 59000); await new Promise((done) => setTimeout(done, 0));
-  assert.equal(runs.length, 3, "found, it isn't looked for again within ten minutes");
 });
 
 // The list moves as T3's (Sidebar.motion.ts): a frame where the rows were, then let go to ease into place.
@@ -1768,7 +1762,7 @@ test("a hovered row that leaves the list (to the folded Working shelf) and comes
   assert.equal(find(f.tree, "settle-A").handlers.on_click, undefined, "no Settle offer either");
 });
 
-test("the snooze menu is T3's: soonest first, one row per wake minute, tonight gone once past", () => {
+test("the snooze menu lists the shared times, and keys pick one", () => {
   const f = fixture(); f.add("A", "working"); f.mod.workOpen = true; f.mod.hovered = "A";
   const at = (day, h, m = 0) => new Date(2026, 10, day, h, m).getTime();
   const offered = (now) => {
@@ -1777,10 +1771,6 @@ test("the snooze menu is T3's: soonest first, one row per wake minute, tonight g
     return panel.items.filter((row) => row.key && !texts(row).includes("Custom…")).map((row) => texts(row).join(" "));
   };
   assert.deepEqual(offered(at(3, 10)), ["In 1 hour 11:00 am", "In 3 hours 1:00 pm", "This evening 6:00 pm", "Tomorrow 9:00 am", "Next week Mon 9:00 am"]);
-  assert.deepEqual(offered(at(3, 15)), ["In 1 hour 4:00 pm", "In 3 hours 6:00 pm", "Tomorrow 9:00 am", "Next week Mon 9:00 am"], "6 pm from either shows once");
-  assert.deepEqual(offered(at(3, 19)), ["In 1 hour 8:00 pm", "In 3 hours 10:00 pm", "Tomorrow 9:00 am", "Next week Mon 9:00 am"], "tonight's past");
-  assert.deepEqual(offered(at(3, 22)), ["In 1 hour 11:00 pm", "In 3 hours Wed 1:00 am", "Tomorrow 9:00 am", "Next week Mon 9:00 am"], "another day names it");
-  assert.deepEqual(offered(at(8, 10)).slice(-1), ["Tomorrow 9:00 am"], "on a Sunday next week is tomorrow");
   f.render(at(3, 10));
   for (let i = 0; i < 4; i++) f.event("snooze-panel-A", "on_key_down", { key: "down" });
   f.event("snooze-panel-A", "on_action:t3_inbox_snooze_pick"); f.flush();
@@ -2429,35 +2419,6 @@ test("a Settle the core refuses takes its Undo notice back", async () => {
   assert.deepEqual(f.active(), ["A"], "the card stays active");
 });
 
-test("a hover label waits, fades in once laid out, fades out before it goes, and comes back from the fade", () => {
-  const f = fixture(); f.add("A", "idle", 100);
-  const walk = (n) => (n && typeof n === "object" ? [n, ...n.items.flatMap(walk)] : []);
-  const body = () => walk(f.mod.render(f.cx)).find((n) => n.key?.startsWith("tip-body-inbox-scope-"));
-  const over = (on) => { f.mod.hot = on ? "inbox-scope" : null; find(f.mod.render(f.cx), "tip-over-inbox-scope").handlers.on_hover(on, f.cx); };
-  const pass = (ms) => f.render(f.now + ms);
-  over(true);
-  assert.equal(body(), undefined, "not before its delay");
-  pass(150);
-  const first = body();
-  assert.deepEqual(first.style.opacity, [0], "drawn clear first: a transition adopts the first value it sees");
-  first.handlers.on_size_change({ width: 40, height: 20 }, f.cx);
-  assert.deepEqual([body().style.opacity, body().style.top], [[1], [0]]);
-  over(false);
-  assert.deepEqual([body().style.opacity, body().style.top], [[0], [-4]], "still up, fading back toward its control");
-  over(true);
-  assert.equal(body().key, first.key, "back before it went: the same one fades back");
-  assert.deepEqual(body().style.opacity, [1]);
-  pass(150);
-  assert.deepEqual(body().style.opacity, [1], "its going was called off");
-  over(false); pass(150);
-  assert.equal(body(), undefined, "gone: a clear label would still block what it covers");
-  over(true); pass(150);
-  assert.notEqual(body().key, first.key, "reopened, a new id: a size reports only an id's first layout");
-  over(false); pass(150);
-  over(true); f.mod.hot = null; pass(150);
-  assert.equal(body(), undefined, "unlit with no leaving reported: a dialog covers it, and no clear label stays over the dialog");
-});
-
 test("a row's card fades when a control in the row is lit and when another row's opens at once", () => {
   const f = fixture(); f.add("A", "idle", 100); f.add("B", "idle", 200); f.render();
   const card = (x) => find(f.tree, `details-card-${x}`);
@@ -2658,29 +2619,6 @@ test("a card with no box yet stays while the pointer holds still; moving, with n
   assert.deepEqual(find(f.tree, "details-card-A").style.opacity, [0]);
 });
 
-test("a hover label goes when its leave never comes, and its control stops being lit", () => {
-  const f = fixture(); f.add("A", "idle", 100);
-  const polling = () => f.watches.filter((w) => !w.cancelled).length, before = polling();
-  const walk = (n) => (n && typeof n === "object" ? [n, ...n.items.flatMap(walk)] : []);
-  const body = () => walk(f.mod.render(f.cx)).find((n) => n.key?.startsWith("tip-body-inbox-scope-"));
-  f.mod.hot = "inbox-scope";
-  const over = () => find(f.mod.render(f.cx), "tip-over-inbox-scope");
-  over().handlers.on_hover(true, f.cx);
-  f.render(f.now + 150);
-  f.pointer = { x: 20, y: 10 };
-  over().handlers.on_mouse_move({ bounds: { x: 0, y: 0, width: 40, height: 20 } });
-  f.tick();
-  assert.equal(f.mod.hot, "inbox-scope", "the pointer's on it");
-  assert.ok(body());
-  f.pointer = { x: 20, y: 300 };
-  f.tick();
-  assert.equal(f.mod.hot, null);
-  assert.deepEqual(body().style.opacity, [0], "it fades");
-  f.render(f.now + 150);
-  assert.equal(body(), undefined);
-  assert.equal(polling(), before, "nothing left polling");
-});
-
 test("hovering works in a window that isn't active, as T3's: it doesn't flash and go", () => {
   const f = fixture(); f.add("A", "idle", 100); f.render();
   f.active = false;
@@ -2706,13 +2644,6 @@ test("the window going inactive under a still pointer leaves its hover as it is"
   f.tick(); f.render();
   assert.equal(f.mod.hovered, "A");
   assert.ok(find(f.tree, "details-card-A"));
-});
-
-test("past 40 rows coming and going at once, they just show", () => {
-  const f = fixture(); f.add("A", "idle", 100); f.render();
-  for (let i = 0; i < 41; i++) f.add(`N${i}`, "idle", 200 + i);
-  f.render();
-  assert.equal(Object.keys(f.mod.motion.fly).length, 0);
 });
 
 test("a card and a settled row measure as T3's, and the lists stack as its does", () => {

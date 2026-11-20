@@ -11,7 +11,7 @@ A sidebar for Herdr App that keeps only the agents still asking for your attenti
 ## On its own
 
 - `mod.json` docks it on the left, 300 wide (`"place": "left"`), where Herdr T3's places it in its sidebar stack (`"none"`). `keys.json` adds the Settle key in `global`: `"cmd-shift-s": "t3-inbox.settle"`.
-- Props it takes when a layout gives them, else: `newMenu` (New tab opens that mod; else the shipped `new-menu`), `menu` (a card's right-click menu; else none, as the shipped `menu` has no agent's) and `home` (settling the agent in view goes back to Home; else, as T3, to the next card).
+- Props it takes when a layout gives them, else: `newMenu` (New tab in… opens that mod; else the shipped `new-menu`), `menu` (a card's right-click menu; else none, as the shipped `menu` has no agent's) and `home` (settling the agent in view goes back to Home; else, as T3, to the next card).
 - Settled and snoozed state are terminal labels on the agent itself (`hc label <address> settled=<ms>:<turn>`, `snoozed=<wake ms>`): they end with the terminal, and every mod and window can read them. Shelf folding, the filter and the last seen states are in the mod's `localStorage`; the rows as drawn are shared as `t3-inbox.rows` for a layout's keys to walk them.
 - What Herdr T3's tab bar adds, its own key's returns (`t3-tabs.unsettled`) and the settled agent's hidden done dot, isn't there alone.
 - Programs: `hc label`; for space marks, on the space's machine, `git rev-parse --show-toplevel`, `sh -c` file tests and `base64`.

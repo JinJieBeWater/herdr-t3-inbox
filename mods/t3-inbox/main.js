@@ -1,13 +1,5 @@
-// The inbox: no spaces, only the agents still asking for attention, as cards, latest news first.
-// Below, as in T3: Working (busy agents, folded) and Settled (put away by hand until new work brings them back).
-// Settled lives on the agent's own terminal as `settled=<ms>:<turn>`: it ends with the terminal, every mod
-// sees it, and a turn ended since says there was new work even while no window watched. Looking doesn't count.
-// A mod pane has a card too if its mod asks (`inbox: true` in
-// shared("<mod>.program")): it goes by what its mod reports as an agent does. It's a view whose state lives elsewhere, so
-// Settle closes it: no Settled, no Undo, no pin and no drag.
-// Snoozed, as T3's: `snoozed=<wake ms>` hides an agent, working or not, on a shelf of its own until then, and it wakes
-// where it was, marked Woke until looked at. It shows meanwhile while it needs the person; a failure, a new turn in
-// view, Wake, a pin or Settle ends it.
+// The Inbox, as T3's: the agents still asking for attention as cards, latest news first, with Working, Snoozed and Settled below.
+// Settled and snoozed live on the agent's own terminal (`settled=<ms>:<turn>`, `snoozed=<wake ms>`): every mod sees them and they end with it.
 
 import { View } from "gpui-kit";
 import { v_flex, InputState, ScrollHandle } from "gpui-base";

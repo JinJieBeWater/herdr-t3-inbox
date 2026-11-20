@@ -43,7 +43,6 @@ function holding(node, text) {
   return null;
 }
 
-// The row that element sits in.
 function lineOf(node, text) {
   if (!node || typeof node !== "object") return null;
   if (node.items.some((child) => child?.items?.includes(text))) return node;

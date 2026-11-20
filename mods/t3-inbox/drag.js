@@ -14,10 +14,9 @@ export function inboxDrag(view, t, model, actions) {
   const { list, pins, pinned, put, out, busy, hidden, settledAt, working, since, state, viewing, napUntil, wake, napRows } = model;
   const { settle, unsettle, unpinRow, go } = actions;
   const zoom = Number(settings()?.zoom) || 1;
-  // Dragging, as T3's sidebar does it (Sidebar.drag.ts, Sidebar.pointer.ts). Press a row and move 6px to lift it;
-  // it follows the pointer up and down inside the list and says what letting go will do. While it's lifted, the
-  // Pinned and Active labels open, and the list opens a gap the size of the destination's row where it will
-  // land. Pinned keeps a hand-made order; Active and Settled keep their own, so the gap opens where that puts it.
+  // Dragging, as T3's sidebar (Sidebar.drag.ts, Sidebar.pointer.ts): a press and a 6px move lifts a row, which follows the pointer
+  // inside the list. While it's lifted the Pinned and Active labels open and the list opens a gap where it will land: Pinned keeps
+  // a hand-made order, Active and Settled their own, so the gap opens where that puts it.
   let d = view.drag;
   // A row that leaves the list (its agent ended, a filter) can't be dropped. Render can't run commands, so
   // `view.back` stays and the release (or Esc, or leaving) hands the keyboard back.

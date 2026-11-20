@@ -126,7 +126,7 @@ export function inboxList(view, t, model, drag, draw, cx) {
     .child(div().min_w(0).truncate().child(`${n.action} ${n.count} agent${n.count === 1 ? "" : "s"},`))
     // As T3's InlineButton: medium, foreground, underlined on hover.
     .when(n.live, (el) => el.child(div().id("undo-notice-undo").flex_none().font_medium().text_color(t.foreground).hover((s) => s.underline())
-      .role("button").accessibility_label("Undo")
+      .role("button").accessibility_label(`Undo: ${n.action} ${n.count} agent${n.count === 1 ? "" : "s"}`)
       .on_click((_e, cx) => {
         cx.stop_propagation();
         view.undo(cx);
@@ -184,7 +184,6 @@ export function inboxList(view, t, model, drag, draw, cx) {
       view.workOpen = !view.workOpen;
       localStorage.setItem("working.open", String(view.workOpen));
     }).on_mouse_move((_e, cx) => aim(null, cx))));
-    // The original Working group had 2px padding around its cards, with no padding when folded empty.
     busyRows.forEach((a, i) => addShelf(fly(a.address, "work", card(a)), a.address,
       i === 0 ? STACK + 2 : CARD_GAP, i === busyRows.length - 1 ? 2 : 0));
   }

@@ -1,4 +1,4 @@
-// A list's motion and a fold's arrow, as T3's Sidebar.motion.ts. scripts/sync.sh copies this to the mods that use it.
+// A list's motion and a fold's arrow, as T3's Sidebar.motion.ts.
 import { div, svg } from "gpui-kit";
 
 export const MOTION = /** @type {const} */ ({ duration: 150, easing: "ease-out" });
@@ -11,11 +11,9 @@ export function foldArrow(mod, id, open, size, color) {
   return div().relative().size(size).flex_none().child(way("down", open)).child(way("right", !open));
 }
 
-// `entries`: the list's rows in order, each { key, h, y?, ghost? }: `y` where they don't just stack, ghost() to draw a row's leaving
-// without handlers or ids the list uses (none: it just goes).
-// When the rows change, one that moved slides from where it was, a new one fades in riding the kept row above it, and one
-// that left fades out riding the same way. Over 40 coming and going, they just show. `freeze` records the rows without playing
-// anything (a drag draws its own); `from` lands a dropped row from where it was let go: { key, y }.
+// `entries`: the list's rows in order, each { key, h, y?, ghost? }: `y` where they don't just stack, ghost() to draw a row's
+// leaving without the list's handlers or ids. A moved row slides from where it was; a new or leaving one fades, riding the kept
+// row above it. `freeze` records the rows without playing (a drag draws its own); `from` lands a dropped row: { key, y }.
 // Herdr eases only later changes to an element: a row that moves gets a new id, first drawn where it was, then let go.
 export function planMotion(view, entries, cx, { freeze, from } = /** @type {{ freeze?: any, from?: any }} */ ({})) {
   let y = 0;

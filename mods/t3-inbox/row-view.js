@@ -113,16 +113,14 @@ export function inboxRowView(view, t, model, actions, drag) {
     const offer = over && !busy(a);
     const id = `settle-${a.address}`;
     const napOffer = canNap && over;
-    // As in T3, the corner says the state when there's one worth saying (Working, Needs you, Done: finished
-    // and not yet seen), else how long ago it last changed. Sized as T3's: 16px mark, 4px gaps, and the
-    // time in monospace children, one per part, so spacing and width don't hang on the interface font and
-    // a monospace space (a full cell) doesn't open "1h 5m" wider than the 4px gaps.
+    // As in T3, the corner says the state worth saying (Working, Needs you, Done: finished and not yet seen), else how long ago it
+    // changed. The time is monospace children, one per part, so a monospace space doesn't open "1h 5m" wider than the gaps.
     const pill = (color, mark, label, time) => h_flex().id(`state-${a.address}`).h(20).gap(4).flex_none().items_center().font_medium().text_color(color)
       .child(mark).child(div().child(label))
       .when(Boolean(time), (el) => el.children(time.split(" ").map((part) => div().font_family(settings().font_family ?? "JetBrains Mono").child(part))));
     // It wakes where it was, so this carries the weight, as T3's; a click dismisses it, and it stays on hover.
-    const wokeMark = woke(a) && tip(view, t, `woke-${a.address}`, "Dismiss Woke notification", stop(view, t, `woke-${a.address}`, h_flex().id(`woke-${a.address}`).h(20).gap(4).flex_none().items_center().font_medium().text_color(t.blocked)
-      .hover((s) => s.underline()).on_hover(glow(view, `woke-${a.address}`)).role("button").accessibility_label("Dismiss Woke notification")
+    const wokeMark = woke(a) && tip(view, t, `woke-${a.address}`, "Clear Woke mark", stop(view, t, `woke-${a.address}`, h_flex().id(`woke-${a.address}`).h(20).gap(4).flex_none().items_center().font_medium().text_color(t.blocked)
+      .hover((s) => s.underline()).on_hover(glow(view, `woke-${a.address}`)).role("button").accessibility_label("Clear Woke mark")
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => {
         cx.stop_propagation();
@@ -145,7 +143,7 @@ export function inboxRowView(view, t, model, actions, drag) {
               : div().id(`state-${a.address}`).flex_none().child(since(a) > 0 ? ago(since(a), now) : ""));
     // Still at work when it wakes, it says both, as T3's row; hovered, Woke stays and Working makes way.
     const status = running(a) && wokeMark ? h_flex().gap(4).flex_none().items_center().when(!acting, (el) => el.child(word)).child(wokeMark) : word;
-    // T3's align="end" with its flip: right edges together if the menu fits to the clock's left, else from the clock's left edge and out over the sidebar's. Popover only clamps, so the flip is here; no press (the keyboard), the flip.
+    // T3's align="end" with its flip, here since Popover only clamps: right edges together if the menu fits left of the clock, else out over the sidebar.
     const clock = canNap && snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick);
     const corner = ghost ? (verb ? badge(verb) : div())
       : swept(a) ? badge("settle")
@@ -169,8 +167,7 @@ export function inboxRowView(view, t, model, actions, drag) {
         .child(svg("mods/t3-inbox/icons/check.svg").size(14).flex_none().text_color(lit(id, t.muted)))
         .child("Settle")
         .when(offer, (el) => stop(view, t, id, el, 6)), { action: on ? settleKey() : undefined, delay }))));
-    // T3's card row: rounded-md, its lines 20, 20 and 16 tall, 4 and 2 apart: 78 with all three. 8 in, not T3's 10, so its words and
-    // icons end where the buttons' icons above do (docs/internals/t3-tokens.md「规则」R3).
+    // T3's card row, 8 in, not T3's 10, so its words and icons end where the buttons' icons above do (t3-tokens「规则」R3).
     const base = v_flex().id(`${ghost ? "ghost-" : ""}card-${a.address}`).px(8).py(8).flex_none().rounded(6)
       // A working row recedes until it's hovered or in view, as T3's.
       .when(!ghost, (el) => el.opacity(running(a) && !woke(a) && !on && !over ? 0.7 : 1).transition("opacity", MOTION));

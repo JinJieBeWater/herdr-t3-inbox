@@ -12,7 +12,7 @@ import { alpha } from "./color.js";
 
 // A custom snooze can be far off; its timer needn't be.
 export const DAY = 86400000;
-// Base UI's collision padding, and the Snooze menu's width. shortcut: the width is the presets' widest as drawn, not measured; measure it if presets become editable.
+// Base UI's collision padding, and the Snooze menu's width. shortcut: the presets' widest as drawn; measure it if presets become editable.
 const NAP_MENU_MARGIN = 5, NAP_MENU_W = 180;
 
 // T3's Custom snooze: when a date and time or a duration wakes, or null for a time that doesn't exist or has passed.
@@ -263,7 +263,7 @@ export function snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick) 
       .when(napOffer, (el) => stop(view, t, napId, el, 6)))
     .when(menu, (el) => {
       const choices = [...presets(now), { label: "Custom…", custom: true }];
-      // Sized as T3's menu: as wide as its rows, 160px at least. Nothing lit until the pointer or a key gets there.
+      // Sized as T3's menu: as wide as its rows. Nothing lit until the pointer or a key gets there.
       return el.content(v_flex().id(`snooze-panel-${key}`).min_w(160).mt(4).p(4).rounded(8).bg(t.popover).border_1().border_color(t.border).shadow_lg().text_size(14)
         .opacity(view.napShown === false ? 0 : 1).transition("opacity", MOTION)
         .track_focus(view.napKeys).key_context("InboxSnoozeMenu")

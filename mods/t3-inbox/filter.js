@@ -97,7 +97,7 @@ export function inboxTop(view, t, model) {
           .child(svg("mods/t3-inbox/icons/check.svg").size(8).text_color("#ffffff")))))
       .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(s.name));
   };
-  // As T3's: from the button's left edge, 288 wide, out over the work column; radius 8 and rows' 4, inset 4 (its rounded-lg, rounded-sm, px-1).
+  // As T3's: from the button's left edge, out over the work column (its rounded-lg, rounded-sm, px-1).
   const filter = Popover.new("inbox-scope-menu").anchor("top_left").open(view.scopeOpen)
     .on_open_change((open, cx) => {
       view.scopeOpen = open;
@@ -125,8 +125,7 @@ export function inboxTop(view, t, model) {
         cx.stop_propagation();
         cx.notify();
       })
-      // As T3's ComboboxSearchInput: 12 in and 10 down less the 1 it shifts up, a 26 field, 6 to the rule. Its text starts 20 from
-      // the icon, 4 before the names, and inside the button's left edge as the panel hangs from it.
+      // As T3's ComboboxSearchInput. Its text starts 20 from the icon, 4 before the names, inside the button's left edge as the panel hangs from it.
       .child(h_flex().mx(8).mt(5).h(33).pb(6).gap(4).flex_none().items_center().border_b_1().border_color(t.border)
         .child(svg("mods/t3-inbox/icons/search.svg").size(16).flex_none().text_color(t.dim))
         .child(Input.new(view.search).flex_1().h_full().text_size(14).text_color(t.foreground)))
@@ -156,7 +155,7 @@ export function inboxTop(view, t, model) {
     .child(tip(view, t, "inbox-scope", "Filter by space", filter, { off: view.scopeOpen, hint: "Shift+click to pick several", below: true }))
     .child(tool("inbox-new-space", "New space", "folder-plus", newSpaceButton(props()?.newMenu)))
     // The layout passes its own menu; docked alone, the shipped one.
-    .child(tool("inbox-new-tab", "New tab", "square-pen", { closed: closedKey(props()?.newMenu ?? "new-menu"), onOpen: () => run("mod.open", { name: props()?.newMenu ?? "new-menu" }) })));
+    .child(tool("inbox-new-tab", "New tab in…", "square-pen", { closed: closedKey(props()?.newMenu ?? "new-menu"), onOpen: () => run("mod.open", { name: props()?.newMenu ?? "new-menu" }) })));
 
 
   return top;

@@ -21,10 +21,9 @@ const byRecent = (x, y) => y.since - x.since || byAddress(x, y);
 export const byCard = (x, y) => Number(y.blocked) - Number(x.blocked) || byRecent(x, y);
 
 // Takes each agent's state as working, blocked or idle (done counts as idle: looking at it isn't news).
-// A run's place in Working is when it started, as T3's is the person's message: a pause for them, or a stop
-// that goes on within the grace, is the same run. Pinned and settled ones skip the grace, as in T3: their
-// place doesn't hang on it. A turn ended while we weren't watching is news too. Hidden, nothing draws, so it goes by
-// `changed`, when it really changed; a time no later than the last we saw is about something else, so then it's now.
+// A run's place in Working is when it started, as T3's: a pause for the person, or a stop that goes on within the grace, is the
+// same run; pinned and settled ones skip the grace. A turn ended while we weren't watching is news too. Hidden, it goes by
+// `changed`; a time no later than the last we saw is about something else, so then it's now.
 export function trackInboxRows(previous, list, all, now) {
   const changes = { ...previous }, waits = [];
   let dirty = false;

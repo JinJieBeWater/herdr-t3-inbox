@@ -2655,3 +2655,71 @@ test("a card and a settled row measure as T3's, and the lists stack as its does"
   assert.equal(num(shelfChildren(f.tree, "settled").find((n) => find(n, "slim-B")), "mt"), 1, "gap-px between a shelf header and its rows");
   assert.deepEqual(["h", "px", "gap"].map((k) => num(find(f.tree, "inbox-top"), k)), [32, 8, 4], "the search field alone, its middle on the pane headers'");
 });
+
+test("Inbox scroll containers keep vertical padding as child spacers so an un-overflowed list cannot scroll", () => {
+  const f = fixture(); f.add("A", "idle", 100); f.add("B", "idle", 200); f.render();
+  const list = find(f.tree, "inbox-list");
+  assert.deepEqual([list.style.pt, list.style.pb], [undefined, undefined], "inbox-list has no pt/pb on overflow_y_scroll");
+  assert.deepEqual([find(list, "inbox-top-pad")?.style.h, find(list, "inbox-bottom-pad")?.style.h], [[8], [8]], "inbox-list top/bottom spacing lives in flex_none spacers");
+  assert.equal(list.items.at(-1).key, "inbox-bottom-pad", "bottom spacer sits after the last shelf");
+  f.mod.inlineInput.set_value("A"); f.mod.inlineInput.heard.change({}, f.cx); f.render();
+  const results = find(f.tree, "inbox-search-results");
+  assert.deepEqual([results.style.pt, results.style.pb], [undefined, undefined], "inbox-search-results has no pt/pb on overflow_y_scroll");
+  assert.deepEqual([find(results, "inbox-search-top-pad")?.style.h, find(results, "inbox-search-bottom-pad")?.style.h], [[7], [7]], "search list spacers account for gap(1) to equal 8px");
+  assert.equal(results.items.at(-1).key, "inbox-search-bottom-pad");
+});
+
+test("standalone Undo notice omits its summary whole when short of room and brings it back when room or text fits", () => {
+  const f = fixture(), a = f.add("A", "idle", 300);
+  f.add("B", "idle", 200);
+  const zoom = 2;
+  f.context.settings = () => ({ zoom });
+  f.context.keys = () => [{ action: "t3-tabs.undo", keys: "cmd-shift-z" }];
+  a.focused = true;
+  f.render();
+  f.mod.remember("Unpinned", 12, () => {}, f.cx);
+  f.render(1016);
+  const note = () => find(f.tree, `undo-notice-${f.mod.notice.gen}`);
+
+  // Unmeasured summary defaults to shown without truncation.
+  assert.deepEqual(texts(note()), ["Unpinned 12 agents,", "⇧⌘Z to undo"]);
+  assert.equal("truncate" in find(note(), "undo-notice-summary").style, false, "summary never truncates");
+
+  // Outer width 200 -> inner 180 (minus px(10) * 2). 80 + 4 + 70 = 154 <= 180.5 -> fits whole.
+  f.event(note().key, "on_size_change", { width: 200 * zoom });
+  f.event("undo-summary-measure-Unpinned 12 agents,", "on_size_change", { width: 80 * zoom });
+  f.event("undo-notice-undo", "on_size_change", { width: 70 * zoom });
+  f.render(1016);
+  assert.deepEqual(texts(note()), ["Unpinned 12 agents,", "⇧⌘Z to undo"]);
+  assert.equal("truncate" in find(note(), "undo-notice-summary").style, false);
+
+  // Unchanged measurements do not notify.
+  f.notified = false;
+  f.event(note().key, "on_size_change", { width: 200 * zoom });
+  f.event("undo-summary-measure-Unpinned 12 agents,", "on_size_change", { width: 80 * zoom });
+  f.event("undo-notice-undo", "on_size_change", { width: 70 * zoom });
+  assert.equal(f.notified, false, "unchanged widths do not notify");
+
+  // Outer width 160 -> inner 140. 80 + 4 + 70 = 154 > 140.5 -> summary hidden whole, Undo stays.
+  f.event(note().key, "on_size_change", { width: 160 * zoom });
+  f.render(1016);
+  assert.equal(find(note(), "undo-notice-summary"), null, "summary is hidden whole when inner width is too narrow");
+  assert.deepEqual(texts(note()), ["⇧⌘Z to undo"]);
+  assert.deepEqual(find(note(), "undo-notice-undo").style.accessibility_label, ["Undo: Unpinned 12 agents"]);
+
+  // Widening back to outer 180 (inner 160 >= 154) brings the summary back whole.
+  f.event(note().key, "on_size_change", { width: 180 * zoom });
+  f.render(1016);
+  assert.deepEqual(texts(note()), ["Unpinned 12 agents,", "⇧⌘Z to undo"]);
+
+  // Narrow again (outer 150 -> inner 130): a shorter summary (50 + 4 + 70 = 124 <= 130.5) fits and shows.
+  f.event(note().key, "on_size_change", { width: 150 * zoom });
+  f.render(1016);
+  assert.deepEqual(texts(note()), ["⇧⌘Z to undo"]);
+  f.mod.remember("Settled", 1, () => {}, f.cx);
+  f.render(1032);
+  f.event("undo-summary-measure-Settled 1 agent,", "on_size_change", { width: 50 * zoom });
+  f.render(1032);
+  assert.deepEqual(texts(note()), ["Settled 1 agent,", "⇧⌘Z to undo"]);
+  assert.equal("truncate" in find(note(), "undo-notice-summary").style, false);
+});

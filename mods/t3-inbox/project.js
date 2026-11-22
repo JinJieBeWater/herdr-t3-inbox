@@ -80,13 +80,15 @@ const PLACES = ["favicon.svg", "favicon.ico", "favicon.png", "public/favicon.svg
 // Then the pages that may link one.
 const PAGES = ["index.html", "public/index.html", "app/routes/__root.tsx", "src/routes/__root.tsx", "app/root.tsx", "src/root.tsx", "src/index.html"];
 
+const ICON_EXTS = new Set([".svg", ".png", ".ico", ".jpg", ".jpeg", ".webp", ".gif"]);
+
 // As T3: an HTML <link rel="icon" href>, else a route's { rel: "icon", href }.
 function linkedIcon(source) {
-  const html = /<link\b(?=[^>]*\brel=["'](?:icon|shortcut icon)["'])(?=[^>]*\bhref=["']([^"'?]+))[^>]*>/i.exec(source);
+  const html = /<link\b(?=[^>]*\brel=["'](?:icon|shortcut icon)["'])(?=[^>]*\bhref=["']([^"'?#]+))[^>]*>/i.exec(source);
   if (html) return html[1];
   for (const run of source.split("}")) {
     if (!/\brel\s*:\s*["'](?:icon|shortcut icon)["']/i.test(run)) continue;
-    const href = /\bhref\s*:\s*["']([^"'?]+)/i.exec(run);
+    const href = /\bhref\s*:\s*["']([^"'?#]+)/i.exec(run);
     if (href) return href[1];
   }
   return null;
@@ -96,7 +98,7 @@ function linkedIcon(source) {
 // folder (images show only from there); null if it has none. All through exec and readTextFile, so another
 // machine's space works the same.
 async function lookUp(on, dir) {
-  const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: dir, on });
+  const top = await exec("git", ["--no-optional-locks", "-c", "core.fsmonitor=false", "rev-parse", "--show-toplevel"], { cwd: dir, on });
   const root = (top.code === 0 && top.stdout.trim()) || dir;
   const first = async (paths) => (await exec("sh", ["-c", 'for f; do [ -f "$f" ] && { printf %s "$f"; exit; }; done', "sh", ...paths], { cwd: root, on })).stdout || null;
   let hit = await first(PLACES);
@@ -107,11 +109,14 @@ async function lookUp(on, dir) {
     if (href && !href.split("/").includes("..")) hit = await first([`public/${href}`, href]);
   }
   if (!hit) return null;
+  const dot = hit.lastIndexOf(".");
+  const ext = dot > hit.lastIndexOf("/") ? hit.slice(dot).toLowerCase() : "";
+  if (!ICON_EXTS.has(ext)) return null;
   const r = await exec("sh", ["-c", 'base64 < "$1"', "sh", hit], { cwd: root, on });
   if (r.code !== 0) return null;
   const bytes = Buffer.from(r.stdout.replace(/\s+/g, ""), "base64");
   // Named by its content: a changed icon is a new file, so nothing keeps showing the old one.
-  const name = `cache/t3-icons/${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}${hit.slice(hit.lastIndexOf(".")).toLowerCase()}`;
+  const name = `cache/t3-icons/${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}${ext}`;
   if (!(await fs.exists(`${appHome()}/${name}`))) {
     await fs.mkdir(`${appHome()}/cache/t3-icons`, { recursive: true });
     await fs.writeFile(`${appHome()}/${name}`, bytes);
@@ -136,7 +141,7 @@ export const newTab = (s) => {
 
 // Shared KEY.spaceIcons: [machine, folder] -> the copy's path or null, so every mod shows what one found.
 // shortcut: folders with an icon that no space uses any more stay listed; prune them if the list ever grows noticeably.
-const looked = new Map(); // [machine, folder] -> when this copy last looked
+const looked = () => (globalThis.t3ProjectLooked ??= new Map()); // [machine, folder] -> when any copy last looked
 const lastIcon = new Map(); // space -> its icon where it last had an answer
 const iconKey = (s, ps) => JSON.stringify([s.machine ?? null, placeOf(s, ps)]);
 const iconsOf = (ps) => (ps ? drawOf(ps).icons ??= shared(KEY.spaceIcons) ?? {} : shared(KEY.spaceIcons) ?? {});
@@ -146,10 +151,11 @@ function projectIcon(s, ps, follow) {
   if (!folder) return null;
   const key = iconKey(s, ps), icons = iconsOf(ps), known = icons[key] ?? null;
   if (checking()) return known;
+  const seen = looked();
   // As T3's cache: a missing icon is looked for again sooner than a found one.
-  const stale = !looked.has(key) || Date.now() - looked.get(key) > (known ? 600000 : 60000);
+  const stale = !seen.has(key) || Date.now() - seen.get(key) > (known ? 600000 : 60000);
   if (stale && !(follow && key in icons)) {
-    looked.set(key, Date.now());
+    seen.set(key, Date.now());
     lookUp(s.machine ?? null, folder).then((found) => {
       const all = shared(KEY.spaceIcons) ?? {};
       if (all[key] === found) return;

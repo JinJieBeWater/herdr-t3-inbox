@@ -90,6 +90,7 @@ function fixture() {
     keys: () => [], agents: () => f.rows, terminals: () => [...f.terms], // a new list each call, as Herdr gives (tree.js indexes each list once)
     panes: () => [], machines: () => [{ name: "KVM", connected: true }],
     spaces: () => [{ id: "s1", name: "One", tabs: [] }, { id: "s2", name: "Two", tabs: [] }],
+    home: () => "/home/test",
     focused: () => ({ agent: f.rows.find((a) => a.focused)?.address }),
     theme: () => ({}), settings: () => ({}), props: () => ({}),
     layout: () => ({ id: "sidebar", hidden: f.hidden, children: [{ id: "sidebar-lists", active: f.mode }] }),
@@ -98,6 +99,7 @@ function fixture() {
     setAgentOrder: (xs) => { f.orderWrites++; f.order = Array.from(xs); },
     run: (...args) => f.calls.push(args), notify: (n) => f.notifications.push(n), openOverlay() {}, closeOverlay() {},
     hc: async (args) => { f.labelled.push(args.join(" ")); return { code: 0 }; }, nextCommand: () => new Promise((resolve) => { receive = resolve; }),
+    t3Notice: { current: null, gen: 0 },
   };
   // name.js is the fake above: these cards are titled by what each test sets.
   const src = bundle(__dirname, "main.js", new Set(["name.js"]));
@@ -200,11 +202,12 @@ test("a background window does not end a snooze when its selected agent starts w
   assert.deepEqual(f.labelled, ["label A snoozed="], "failures still wake the agent in a background window");
 });
 
-test("with Lists selected, looking at a woken agent leaves it marked Woke; a new turn in view still ends the snooze", () => {
+test("with Lists selected, looking at a woken agent leaves it marked Woke; a new turn in view still ends the snooze", { skip: !fs.existsSync(path.join(__dirname, "../t3-tabs/main.js")) }, () => {
   const f = fixture(), a = f.add("A"), b = f.add("B"); a.focused = true;
   f.context.props = () => ({ home: "t3-tabs.home" });
   f.label("A", "snoozed", "2000"); f.label("B", "snoozed", "9000"); f.render();
-  const tick = (now) => { f.now = now; f.watches.find((w) => w.ms === 1000).fn(f.cx); f.flush(); };
+  const tabs = f.loadTabs();
+  const tick = (now) => { f.now = now; f.watches.find((w) => w.ms === 1000).fn(f.cx); tabs.navigation.advance(); f.flush(); };
   f.mode = "lists"; tick(2001);
   assert.deepEqual(f.labelled, [], "Lists shows no Woke for the person to have seen");
   a.focused = false; b.focused = true; tick(3000); b.status = "working"; tick(4000);
@@ -313,17 +316,17 @@ test("the Settled header folds and pages confirmed agents without a Clear contro
   assert.equal(f.mod.limit, 10);
 });
 
-test("a shared Undo request seen while drawing runs just after the draw, not with the 1s poll", () => {
-  const f = fixture(), a = f.add("A"); a.focused = true; f.render(); f.settle();
-  const n = f.state["t3.notice"];
-  f.state["t3-tabs.undo"] = { gen: n.gen, at: n.at, requestedAt: f.now, request: 1 };
-  // The footer's Undo: a draw sees it first, and can't ask to be drawn again (Herdr would keep the last frame and say so).
-  f.render();
-  assert.equal(f.mod.notice.live, true, "not during the draw");
-  f.render();
+test("Undo runs immediately through shared notice state across Inbox and t3-tabs without polling", { skip: !fs.existsSync(path.join(__dirname, "../t3-tabs/main.js")) }, async () => {
+  const f = fixture(), a = f.add("A"), b = f.add("B"); a.focused = true; f.render();
+  const tabs = f.loadTabs();
+  f.settle();
+  a.focused = false; b.focused = true;
+  await tabs.settle(f.cx);
+  assert.equal(f.state["t3.notice"].count, 2, "Inbox and tab-bar Settled actions share one live notice");
+  await tabs.undo(f.cx);
   assert.equal(f.mod.pending.settled.A, "");
-  assert.equal(f.mod.notice.live, false);
-  assert.deepEqual(f.active(), ["A"]);
+  assert.equal(f.state["t3.notice"], null, "Undo clears KEY.notice immediately");
+  assert.deepEqual(f.active(), ["A", "B"]);
 });
 
 test("an external label clear and a local Undo keep their old places", async () => {
@@ -381,6 +384,7 @@ test("a background window can miss the whole tab-bar notice and still distinguis
     };
     const tabs = f.loadTabs(), settling = tabs.settle(f.cx);
     if (!undo) await settling;
+    f.render(6000);
     f.render(11000);
     assert.equal(f.state["t3.notice"] ?? null, null, "the observer has seen no live notice");
     if (undo) { reply(); await settling; }
@@ -640,30 +644,36 @@ test("a drag changing the settled page publishes its drawn rows only once, then 
   assert.equal(f.writes.filter(k => k === "t3-inbox.rows").length, 0);
 });
 
-test("a layout Inbox handles Undo through shared state while hidden or behind Lists", () => {
+test("a layout Inbox and tab-bar share instant Undo while hidden or behind Lists", { skip: !fs.existsSync(path.join(__dirname, "../t3-tabs/main.js")) }, async () => {
   for (const mode of ["inbox", "lists"]) {
-    const f = fixture(); f.context.props = () => ({ home: "t3-tabs.home" }); f.mode = mode;
+    const f = fixture(); f.context.props = () => ({ home: "t3-tabs.home" }); f.mode = mode; f.hidden = true;
+    const tabs = f.loadTabs();
     let undone = 0;
-    f.mod.remember("Snoozed", 1, () => undone++, f.cx);
-    const n = f.state["t3.notice"];
-    f.state["t3-tabs.undo"] = { gen: n.gen, at: n.at, requestedAt: f.now, request: 1 };
-    const tick = () => f.watches.find(w => w.ms === 1000).fn(f.cx);
-    tick(); tick(); assert.equal(undone, 1);
-    assert.equal(f.state["t3.notice"].live, false);
-    f.state["t3.notice"] = { owner: "tabs", gen: 100, live: true };
-    f.now = 7000;
-    for (const timer of f.timers) if (!timer.cancelled && timer.at <= f.now) { timer.cancel(); timer.fn(f.cx); }
-    assert.equal(f.state["t3.notice"].owner, "tabs", "an older Inbox notice's timers cannot erase a newer tab-bar action");
+    f.mod.remember("Snoozed", 1, () => { undone++; }, f.cx);
+    await tabs.undo(f.cx);
+    assert.equal(undone, 1, `${mode}: t3-tabs.undo runs Inbox undo immediately even when hidden`);
+    assert.equal(f.state["t3.notice"], null);
+    f.mod.remember("Snoozed", 1, () => {}, f.cx);
+    const stale = f.timers.filter(t => !t.cancelled && t.at === f.now + 5000).at(-1);
+    f.pins = ["A"];
+    tabs.unpin("A", f.cx);
+    assert.equal(f.state["t3.notice"].action, "Unpinned");
+    assert.equal(stale.cancelled, true, "replacing a notice cancels the older 5000ms timer");
+    stale.fn(f.cx);
+    assert.equal(f.state["t3.notice"].action, "Unpinned", "an older notice's timers cannot erase a newer action");
   }
 });
 
-test("Undo pressed just before five seconds runs before expiry, without waiting for the hidden poll", () => {
+test("Undo pressed just before five seconds runs before expiry, without waiting for any poll", { skip: !fs.existsSync(path.join(__dirname, "../t3-tabs/main.js")) }, async () => {
   const f = fixture(); f.context.props = () => ({ home: "t3-tabs.home" }); let undone = 0;
-  f.mod.remember("Snoozed", 1, () => undone++, f.cx);
-  const n = f.state["t3.notice"];
-  f.state["t3-tabs.undo"] = { gen: n.gen, at: n.at, requestedAt: f.now + 4999, request: 1 };
-  f.now += 5000;
-  f.timers.find(t => t.at === f.now).fn(f.cx);
+  const tabs = f.loadTabs();
+  f.mod.remember("Snoozed", 1, () => { undone++; }, f.cx);
+  f.now += 4999;
+  await tabs.undo(f.cx);
+  assert.equal(undone, 1);
+  assert.equal(f.state["t3.notice"], null);
+  f.now += 1;
+  for (const timer of f.timers) if (!timer.cancelled && timer.at <= f.now) { timer.cancel(); timer.fn(f.cx); }
   assert.equal(undone, 1);
 });
 
@@ -1306,9 +1316,7 @@ test("settling shows T3's undo notice over the first shelf for 5s; Undo puts the
   f.event("undo-notice-undo", "on_click");
   assert.deepEqual([f.mod.pending.settled.A, f.mod.pending.settled.B], ["", ""], "both come back, as they were: no news");
   f.render(2016);
-  assert.equal(note().style.opacity[0], 0, "fading out");
-  f.render(2300);
-  assert.equal(note(), null);
+  assert.equal(note(), null, "undo clears notice immediately");
   // Left alone, it goes after 5s.
   f.rows.find((x) => x.address === "A").focused = true; f.settle(); f.render(3000); f.render(3016);
   assert.equal(note().style.opacity[0], 1);
@@ -1316,18 +1324,17 @@ test("settling shows T3's undo notice over the first shelf for 5s; Undo puts the
   f.render(8300); assert.equal(note(), null);
 });
 
-test("with the layout's footer there, the notice goes to it, as T3's footer row hosts it; its Undo comes back as a command", () => {
+test("with the layout's footer there, the notice goes to it, as T3's footer row hosts it; its Undo comes back as a command", async () => {
   const f = fixture(), a = f.add("A", "idle", 300); f.add("B", "idle", 200); a.focused = true;
   f.context.layout = () => ({ children: [{ id: "sidebar-lists", active: "inbox" }, { id: "sidebar-footer", content: { mod: "t3-chrome", props: { footer: true } } }] });
   f.render(); f.settle(); f.render(1000);
   assert.equal(find(f.tree, "undo-notice-1"), null, "nothing over the list");
   assert.deepEqual(plain(f.state["t3.notice"]), { action: "Settled", count: 1, gen: 1, shown: false, live: true, at: 1000 });
   f.render(1016); assert.equal(f.state["t3.notice"].shown, true, "then it fades in, there");
-  f.mod.undo(f.cx);
+  await f.mod.undo(f.cx);
   assert.equal(f.mod.pending.settled.A, "");
-  f.render(1016); assert.deepEqual([f.state["t3.notice"].live, f.state["t3.notice"].shown], [false, false], "fading out");
-  f.render(1300); assert.equal(f.state["t3.notice"], null);
-  const writes = f.jobs.length; f.mod.undo(f.cx); assert.equal(f.jobs.length, writes, "an Undo pressed as it goes does nothing");
+  assert.equal(f.state["t3.notice"], null, "undo clears notice immediately");
+  const writes = f.jobs.length; await f.mod.undo(f.cx); assert.equal(f.jobs.length, writes, "a second Undo does nothing");
 });
 
 test("folding Working slides its header down with the list, as T3's markers move, so nothing passes over it", () => {
@@ -2130,7 +2137,7 @@ test("undoing a Settle brings back a snooze that hasn't run out", () => {
   f.label("A", "settled", ""); f.label("A", "snoozed", "3600000"); f.render(1200);
   assert.deepEqual(f.napping(), ["A"]);
   // Run out by the time of the Undo, it stays awake, as T3's skips an expired restore.
-  f.settle(); f.flush(); f.label("A", "settled", "1200:0"); f.label("A", "snoozed", ""); f.render(1300);
+  f.now = 3599000; f.settle(); f.flush(); f.label("A", "settled", "3599000:0"); f.label("A", "snoozed", ""); f.render(3599100);
   f.labelled.length = 0; f.now = 3600001;
   find(f.tree, "undo-notice-undo").handlers.on_click({}, f.cx); f.flush();
   assert.deepEqual(f.labelled, ["label A settled="]);
@@ -2202,7 +2209,7 @@ test("Undo puts back the pin it took, in its place, and leaves one made since", 
   assert.deepEqual([f.pins, f.mod.notice.action], [["Q", "B"], "Unpinned"]);
   f.pins = ["Q", "C", "B"]; f.mod.undo(f.cx);
   assert.deepEqual(f.pins, ["P", "Q", "C", "B"]);
-  f.pins = ["Q", "P"]; f.mod.notice = null; f.render(7200);
+  f.pins = ["Q", "P"]; f.render(7200);
   f.mod.drag = { from: "Q", moved: true, y: 300, grab: 10, height: 30, target: { section: "active" } }; f.render(7200);
   f.event("t3-inbox-root", "on_mouse_up:left"); f.pins = ["Q", "P"]; f.mod.undo(f.cx);
   assert.deepEqual(f.pins, ["Q", "P"]);
@@ -2722,4 +2729,111 @@ test("standalone Undo notice omits its summary whole when short of room and brin
   f.render(1032);
   assert.deepEqual(texts(note()), ["Settled 1 agent,", "⇧⌘Z to undo"]);
   assert.equal("truncate" in find(note(), "undo-notice-summary").style, false);
+});
+
+test("1000ms timer skips compute in Lists mode, clears agentOrder, and gates clockAt notify on visibility", () => {
+  const f = fixture();
+  f.add("A", "working", 1000);
+  f.mod.workOpen = true;
+  f.context.props = () => ({ home: "t3-tabs.home" });
+  f.render(1000);
+  assert.ok(f.mod.agentOrder !== null);
+
+  let agentReads = 0;
+  const origAgents = f.context.agents;
+  f.context.agents = () => { agentReads++; return origAgents(); };
+
+  const tick1s = (now) => { f.notified = false; f.now = now; f.watches.find((w) => w.ms === 1000).fn(f.cx); };
+
+  // In Lists mode: skips full compute, clears agentOrder, does not notify clockAt.
+  f.mode = "lists";
+  tick1s(3000);
+  assert.equal(agentReads, 0, "Lists mode skips compute(cx) in 1000ms timer");
+  assert.equal(f.mod.agentOrder, null, "Lists mode clears agentOrder");
+  assert.equal(f.notified, false, "Lists mode does not notify for clockAt");
+
+  // In Inbox mode while sidebar hidden: runs compute(cx) (ADR 0003), skips clockAt notify.
+  f.mode = "inbox";
+  f.hidden = true;
+  tick1s(4000);
+  assert.equal(agentReads, 1, "Inbox mode with hidden sidebar still runs compute(cx)");
+  assert.equal(f.notified, false, "hidden sidebar does not notify for clockAt");
+
+  // Window inactive: runs compute(cx), skips clockAt notify.
+  f.hidden = false;
+  f.active = false;
+  tick1s(5000);
+  assert.equal(agentReads, 2);
+  assert.equal(f.notified, false, "inactive window does not notify for clockAt");
+
+  // Visible again: notifies once for due clockAt.
+  f.active = true;
+  tick1s(6000);
+  assert.equal(agentReads, 3);
+  assert.equal(f.notified, true, "visible Inbox notifies for due clockAt");
+});
+
+test("60000ms timer only calls cx.notify() when Inbox is visible", () => {
+  const f = fixture();
+  const tick60s = () => { f.notified = false; f.watches.find((w) => w.ms === 60000).fn(f.cx); return f.notified; };
+
+  f.hidden = true; f.mode = "inbox"; f.active = true;
+  assert.equal(tick60s(), false, "sidebar hidden: no notify");
+
+  f.hidden = false; f.mode = "lists"; f.active = true;
+  assert.equal(tick60s(), false, "Lists active: no notify");
+
+  f.hidden = false; f.mode = "inbox"; f.active = false;
+  assert.equal(tick60s(), false, "window inactive: no notify");
+
+  f.hidden = false; f.mode = "inbox"; f.active = true;
+  assert.equal(tick60s(), true, "Inbox visible: notifies");
+});
+
+test("layout Inbox delegates failed/turned snooze clearing to t3-tabs and only clears woke-on-view; standalone keeps all", () => {
+  // Layout mode (props().home is set): failed and turned do NOT trigger setLabelDue in t3-inbox; woke-on-view still clears.
+  {
+    const f = fixture(), a = f.add("A", "idle", 100), b = f.add("B", "idle", 100), c = f.add("C", "idle", 100);
+    f.context.props = () => ({ home: "t3-tabs.home" });
+    f.label("A", "snoozed", "9000");
+    f.label("B", "snoozed", "9000");
+    f.label("C", "snoozed", "2000");
+    f.render(1000);
+    f.terms[0].status = "error"; // failed
+    b.focused = true; b.status = "working"; // turned
+    f.render(1500); f.flush();
+    assert.deepEqual(f.labelled, [], "layout Inbox skips failed/turned snooze clearing (t3-tabs handles it)");
+
+    b.focused = false; c.focused = true;
+    f.render(2001); f.flush();
+    assert.deepEqual(f.labelled, ["label C snoozed="], "layout Inbox still clears woke-on-view");
+  }
+  // Standalone mode (no props().home): keeps failed/turned/woke clearing.
+  {
+    const f = fixture(), a = f.add("A", "idle", 100), b = f.add("B", "idle", 100);
+    f.label("A", "snoozed", "9000");
+    f.label("B", "snoozed", "9000");
+    f.render(1000);
+    f.terms[0].status = "error";
+    b.focused = true; b.status = "working";
+    f.render(1500); f.flush();
+    assert.deepEqual(f.labelled, ["label A snoozed=", "label B snoozed="], "standalone Inbox still clears failed and turned snoozes");
+  }
+});
+
+test("init() guards malformed localStorage JSON for changes and scope", () => {
+  const f = fixture();
+  f.data.set("changes", "{not-json");
+  f.data.set("scope", "[broken");
+  const mod = new f.context.Mod();
+  mod.init({}, f.cx);
+  assert.deepEqual(plain(mod.changed), {});
+  assert.deepEqual(plain(mod.scope), []);
+
+  f.data.set("changes", "null");
+  f.data.set("scope", "{}");
+  const mod2 = new f.context.Mod();
+  mod2.init({}, f.cx);
+  assert.deepEqual(plain(mod2.changed), {});
+  assert.deepEqual(plain(mod2.scope), []);
 });

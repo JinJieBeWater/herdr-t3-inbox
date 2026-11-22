@@ -6,7 +6,7 @@ export const KEY = {
   // homeShown: the wallpaper's picture as Home shows it, for the Home row to draw its part (asciicn-wallpaper writes it).
   homeShown: "t3.homeShown",
   settings: "t3.settings", pins: "t3.pins", notice: "t3.notice", focus: "t3.focus", spaceIcons: "t3.spaceIcons", agentOrder: "t3.agentOrder", panels: "t3.panels", projects: "t3.projects",
-  home: "t3-tabs.home", undo: "t3-tabs.undo", unsettled: "t3-tabs.unsettled", compact: "t3-tabs.compact", recent: "t3-tabs.recent",
+  home: "t3-tabs.home", unsettled: "t3-tabs.unsettled", compact: "t3-tabs.compact", recent: "t3-tabs.recent",
   inboxRows: "t3-inbox.rows", agentsRows: "t3-agents.rows", actions: "t3-actions.actions", openTarget: "t3.openTarget", detailsItems: "t3-actions.detailsItems",
   markdown: "t3-files.markdown",
 };
@@ -19,3 +19,23 @@ export const closedKey = (mod, popup) => popup ? `${mod}.${popup}Closed` : `${mo
 export const wrapLines = () => localStorage.getItem("lines.wrap") !== "false";
 /** @param {boolean} on */
 export const setWrapLines = (on) => localStorage.setItem("lines.wrap", String(on));
+
+/**
+ * Reads JSON from `localStorage.getItem(key)`, returning `fallback` when missing, `"null"`, invalid JSON, or mismatched container shape.
+ * @param {string} key
+ * @param {any} fallback
+ * @returns {any}
+ */
+export function readLocal(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    const parsed = JSON.parse(raw);
+    if (parsed == null) return fallback;
+    if (Array.isArray(fallback)) return Array.isArray(parsed) ? parsed : fallback;
+    if (typeof fallback === "object" && fallback !== null) return typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
+    return parsed;
+  } catch {
+    return fallback;
+  }
+}

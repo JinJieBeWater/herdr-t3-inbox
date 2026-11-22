@@ -24,6 +24,8 @@ function byParent(all) {
   return ix;
 }
 
+export const terminalByAddress = (all) => byParent(all).at;
+
 // A sub-agent's own word, error kept apart from blocked (subAgents puts them together). agents()'s done is unread
 // only; a sub-agent without a pane isn't in it, and Herdr's seen label says whether its last turn was read.
 export const kidStatus = (k, listed) => {

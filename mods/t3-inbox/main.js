@@ -5,7 +5,7 @@ import { View } from "gpui-kit";
 import { v_flex, InputState, ScrollHandle } from "gpui-base";
 import { agents, terminals, panes, spaces, focused, theme, shared, setShared, setAgentOrder, props, nextCommand, settings, layout, window } from "herdr";
 import { modStatus, programOf } from "./name.js";
-import { descendants, ownStatus, stillSettled } from "./tree.js";
+import { descendants, ownStatus, stillSettled, terminalByAddress } from "./tree.js";
 import { inboxFacts } from "./facts.js";
 import { inboxWorktrees } from "./worktree.js";
 import { stopsInit, stopsEnd, focusRoot, enter } from "./focus.js";
@@ -18,8 +18,9 @@ import { inboxDrag } from "./drag.js";
 import { inboxRowView } from "./row-view.js";
 import { inboxList, searchList } from "./list-view.js";
 import { sidebarParts } from "./sidebar.js";
-import { KEY } from "./store.js";
-import { pinList } from "./pins.js";
+import { KEY, readLocal } from "./store.js";
+import { rememberNotice, forgetNotice, undoNotice } from "./notice.js";
+import { prunePins } from "./pins.js";
 import { writeLabel } from "./labels.js";
 
 // A label write render keeps asking for waits this long (ms) after failing.
@@ -27,6 +28,10 @@ const RETRY = 60000;
 
 function revealVisible({ rail, stack } = sidebarParts(layout()), active = window()?.active) {
   return active && !rail?.hidden && !stack?.hidden && (!stack || stack.active === "inbox");
+}
+
+function inboxVisible({ rail, stack } = sidebarParts(layout()), active = window()?.active) {
+  return active !== false && !rail?.hidden && !stack?.hidden && stack?.active !== "lists";
 }
 
 export default class Inbox extends View {
@@ -51,13 +56,12 @@ export default class Inbox extends View {
     /** @type {any} */ (this).fs.hold = () => (this.napMenu && this.napKeys.is_focused()) || (this.scopeOpen && this.searching) || this.inlineFocused;
     // Each agent's last state, when we saw it set going or come back (ms; 0: before we were watching), the turns
     // it had ended then, and for one that just stopped, when its run started.
-    this.changed = JSON.parse(localStorage.getItem("changes") ?? "{}");
+    this.changed = readLocal("changes", {});
     this.open = localStorage.getItem("settled.open") === "true";
     this.workOpen = localStorage.getItem("working.open") === "true";
     this.napOpen = localStorage.getItem("snoozed.open") === "true";
     // The card whose snooze menu is open, and the row its keys are on.
     this.napMenu = null;
-    this.undoRequest = shared(KEY.undo);
     this.napAt = -1;
     this.napKeys = cx.focus_handle();
     this.limit = FIRST;
@@ -72,7 +76,7 @@ export default class Inbox extends View {
     // Each row's drawn height (logical px, by `kind:address`), for where rows sit when the list moves.
     this.rowH = {};
     // The spaces shown, as T3 scopes threads to projects; none: all of them.
-    this.scope = JSON.parse(localStorage.getItem("scope") ?? "[]");
+    this.scope = readLocal("scope", []);
     this.scopeOpen = false;
     this.scopeAt = 0;
     this.search = InputState.new({ placeholder: "Search spaces…" });
@@ -94,11 +98,17 @@ export default class Inbox extends View {
     // A Working time is drawn again once it reads differently (`clockAt`, list-view.js).
     // Render says when again each time, so a list hidden meanwhile draws nothing.
     cx.timer.every(1000, (cx) => {
-      if (props()?.home) this.compute(cx);
-      if (this.clockAt <= Date.now()) { this.clockAt = Infinity; cx.notify(); }
+      const parts = sidebarParts(layout()), inboxMode = parts.stack?.active !== "lists";
+      if (props()?.home) {
+        if (inboxMode) this.compute(cx, true, parts);
+        else this.agentOrder = null;
+      }
+      if (this.clockAt <= Date.now() && inboxVisible(parts)) { this.clockAt = Infinity; cx.notify(); }
     });
     // The cards' times (5m, 2h) move on by the minute, as T3's do.
-    cx.timer.every(60000, (cx) => cx.notify());
+    cx.timer.every(60000, (cx) => {
+      if (inboxVisible()) cx.notify();
+    });
     // `t3-inbox.settle`: the settle key standalone (keys.json); the layout binds `t3-tabs.settle`, which the tab bar handles even when hidden.
     // `t3-inbox.custom-snooze:<address>:<wake ms>`: the Custom dialog, a copy of this mod with no loop of its own.
     // `t3-inbox.undo`: the undo notice's Undo, when the sidebar footer (t3-chrome) shows it.
@@ -107,7 +117,7 @@ export default class Inbox extends View {
         const command = await nextCommand();
         if (command === "settle") this.settleKey(cx);
         else if (command.startsWith("custom-snooze:")) this.customSnooze(command.slice("custom-snooze:".length), cx);
-        else if (command === "undo") this.undo(cx);
+        else if (command === "undo") await this.undo(cx);
         // pane.go onto this list (mod.json's "focusable"): the keyboard starts at Search.
         else if (command === "focus") {
           const previous = /** @type {any} */ (this).fs.last;
@@ -238,8 +248,6 @@ export default class Inbox extends View {
         if (this.pending[key][addr] === value) delete this.pending[key][addr];
         failed?.();
         this.refused[`${key} ${addr} ${value}`] = Date.now();
-        // A Settle or Snooze that didn't happen: the notice says one fewer, or goes. Its Undo would only rewrite what's there.
-        if (value && this.notice?.live) { if (--this.notice.count > 0) this.publishNotice(); else this.forget(cx); }
       }
       if (w.out === 0 && w.unsure && this.pending[key][addr] !== undefined) this.setLabel(key, addr, this.pending[key][addr], cx);
       cx.notify();
@@ -255,56 +263,12 @@ export default class Inbox extends View {
     this.setLabel(key, addr, value, cx);
   }
 
-  // T3's undo notice (showThreadUndoNotice): the latest run of one action, "Settled 2 agents", undone together for
-  // 5s, then gone. A new notice fades in (a frame clear first: Herdr eases only later changes); it fades out going.
-  remember(action, count, undo, cx) {
-    const live = this.notice?.live && shared(KEY.notice)?.owner !== "tabs" && this.notice.action === action ? this.notice : null;
-    const n = live ?? { action, count: 0, undos: [], gen: (this.notice?.gen ?? 0) + 1, shown: false };
-    n.count += count; n.undos.push(undo); n.live = true; n.at = Date.now();
-    this.notice = n;
-    this.publishNotice(true);
-    const ran = n.undos.length;
-    if (!live) cx.timer.after(16, (cx) => { if (this.notice === n && n.live) { n.shown = true; this.publishNotice(); cx.notify(); } });
-    cx.timer.after(5000, (cx) => {
-      if (this.notice === n && n.undos.length === ran) { this.consumeUndo(cx); this.forget(cx); }
-    });
-  }
+  get notice() { return shared(KEY.notice); }
+  remember(action, count, undo, cx) { return rememberNotice(action, count, undo, cx); }
+  forget(cx) { forgetNotice(cx); }
+  undo(cx) { return undoNotice(cx); }
 
-  forget(cx) {
-    const n = this.notice;
-    if (!n?.live) return;
-    n.live = false; n.shown = false;
-    this.publishNotice();
-    cx.timer.after(250, (cx) => { if (this.notice === n) { this.notice = null; this.publishNotice(); cx.notify(); } });
-    cx.notify();
-  }
-
-  // Latest first: each puts back what it found, as the runs happened.
-  undo(cx) {
-    if (!this.notice?.live) return;
-    for (const undo of [...this.notice.undos].reverse()) undo(cx);
-    this.forget(cx);
-  }
-
-  consumeUndo(cx) {
-    const undo = shared(KEY.undo);
-    if (JSON.stringify(undo) === JSON.stringify(this.undoRequest)) return;
-    this.undoRequest = undo;
-    if (undo && undo.gen === this.notice?.gen && undo.at === this.notice?.at && undo.requestedAt < undo.at + 5000) this.undo(cx);
-  }
-
-  publishNotice(fresh = false) {
-    const n = this.notice;
-    const said = n ? { action: n.action, count: n.count, gen: n.gen, shown: n.shown, live: n.live, at: n.at } : null;
-    const before = this.said;
-    this.said = JSON.stringify(said);
-    if (this.said !== before && (fresh || JSON.stringify(shared(KEY.notice) ?? null) === before)) setShared(KEY.notice, said);
-  }
-
-  compute(cx, publish = true) {
-    // An Undo asks for a redraw, which a draw can't: one seen while drawing runs just after it, not a second later.
-    if (publish) this.consumeUndo(cx);
-    else if (JSON.stringify(shared(KEY.undo)) !== JSON.stringify(this.undoRequest)) cx.timer.after(0, (cx) => { this.consumeUndo(cx); cx.notify(); });
+  compute(cx, publish = true, parts = sidebarParts(layout())) {
     const now = Date.now();
     const runs = agents(), all = terminals(), ps = panes(), sp = spaces(), f = focused();
     // `pane:<id>` is a mod card's address, in t3-inbox.rows too. Docked alone, keep the original one-card-per-agentless-tab rule.
@@ -321,7 +285,7 @@ export default class Inbox extends View {
     // As T3's route reveal: an agent brought into view from elsewhere (a key, the picker, its pane) that the space
     // filter hides widens the filter to every space, kept. Not on the first draw, and a filter you pick isn't undone.
     // Only while the Inbox is the mode (or docked alone): moving about in Lists isn't bringing a card into view.
-    const sidebar = sidebarParts(layout()), { stack } = sidebar, inboxMode = !stack || stack.active === "inbox", active = window()?.active;
+    const sidebar = parts, { stack } = sidebar, inboxMode = !stack || stack.active === "inbox", active = window()?.active;
     const routeChanged = this.inView !== undefined && inView !== this.inView;
     const searching = Boolean(this.inline.query), visible = revealVisible(sidebar, active);
     // As in T3, a route reached while search replaces the list waits until the normal rows return.
@@ -337,7 +301,7 @@ export default class Inbox extends View {
     this.inView = inView;
     // A space that's gone reads as all; its id stays stored, so the scope returns with it.
     const scope = this.scope.filter((id) => sp.some((s) => s.id === id));
-    const term = new Map(all.map((k) => [k.address, k]));
+    const term = terminalByAddress(all);
     // The key reports an explicit return; a label cleared by Undo, even in another window, keeps its place.
     const unsettled = shared(KEY.unsettled) ?? {};
     const returned = new Set(all.filter((k) => unsettled[k.address] !== undefined && unsettled[k.address] !== this.unsettledBefore[k.address]
@@ -354,18 +318,19 @@ export default class Inbox extends View {
       const label = this.pending.settled[a.address] ?? term.get(a.address)?.labels?.settled;
       if (label && !stillSettled({ labels: { settled: label }, turn: term.get(a.address)?.turn }, ownStatus(a.status, a.address, all), kids.get(a.address))) this.setLabelDue("settled", a.address, "", cx);
     }
-    // Pins are the agents list's (t3-agents), one set for both: pinned agents stay up top in pin order, whatever their state.
-    const pins = pinList();
+    // Pins are shared across Inbox and Agents; pruning here covers default Inbox mode and standalone herdr-t3-inbox too.
+    const pins = prunePins(all);
     const wake = (a, cx) => this.setLabel("snoozed", a.address, "", cx);
     // A snooze ends on a failure in its tree (a program's error doesn't stay said), a new turn in view (the person gave
-    // it work), or, with the Inbox selected (docs/adr/0002), being looked at once it has woken. A pin ends it too, as the
-    // pinning writes the label.
+    // it work), or, with the Inbox selected (docs/adr/0002), being looked at once it has woken. In the layout, t3-tabs handles
+    // failure and new-turn clearing (ADR 0002 & 0003); here only woke-on-view runs, and standalone keeps all three.
     const failed = (a) => term.get(a.address)?.status === "error" || descendants(all, a.address).some((k) => k.status === "error");
     for (const a of every) {
       const until = napUntil(a);
       if (!until) continue;
-      const turned = active && viewing(a) && running(a) && ["idle", "done"].includes(this.changed[a.address]?.s);
-      if (failed(a) || turned || (inboxMode && active && viewing(a) && until <= now)) this.setLabelDue("snoozed", a.address, "", cx);
+      const woke = inboxMode && active && viewing(a) && until <= now;
+      const turned = !withHome && active && viewing(a) && running(a) && ["idle", "done"].includes(this.changed[a.address]?.s);
+      if (woke || (!withHome && (failed(a) || turned))) this.setLabelDue("snoozed", a.address, "", cx);
     }
     const tabs = new Map(sp.flatMap((s) => s.tabs.map((c) => [c.id, c])));
     this.track(every.map((a) => ({

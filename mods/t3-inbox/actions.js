@@ -53,32 +53,38 @@ export function inboxActions(view, model) {
     const before = [...pinList()];
     const took = kept.map((a) => a.address);
     unpin(took);
-    let undone = false;
-    for (const a of kept) {
-      view.setLabel("settled", a.address, `${Date.now()}:${term.get(a.address)?.turn ?? 0}`, cx, () => {
-        if (!undone && before.includes(a.address)) repin(before, [a.address]);
-      });
-      if (naps.get(a)) wake(a, cx);
-    }
     // Undone, they're back where they were: no news, as T3 restores a thread, with its pin and a snooze that hasn't
     // run out.
-    if (kept.length) view.remember("Settled", kept.length, (cx) => {
-      undone = true;
-      repin(before, took);
+    if (kept.length) {
+      let undone = false;
+      const failed = new Set();
+      const note = view.remember("Settled", kept.length, () => {
+        undone = true;
+        const settled = kept.filter((a) => !failed.has(a.address));
+        repin(before, settled.map((a) => a.address));
+        for (const a of settled) {
+          view.setLabel("settled", a.address, "", cx);
+          if (naps.get(a) > Date.now()) view.setLabel("snoozed", a.address, String(naps.get(a)), cx);
+        }
+        bringBack(seen && !failed.has(seen.address) ? seen : null);
+      }, cx);
       for (const a of kept) {
-        view.setLabel("settled", a.address, "", cx);
-        if (naps.get(a) > Date.now()) view.setLabel("snoozed", a.address, String(naps.get(a)), cx);
+        view.setLabel("settled", a.address, `${Date.now()}:${term.get(a.address)?.turn ?? 0}`, cx, () => {
+          failed.add(a.address);
+          if (!undone && before.includes(a.address)) repin(before, [a.address]);
+          note.drop(1, cx);
+        });
+        if (naps.get(a)) wake(a, cx);
       }
-      bringBack(seen);
-    }, cx);
+    }
     const moved = moveOn(xs);
     for (const a of panes) run(props()?.home ? `t3-tabs.close-pane:${a.pane}` : "pane.close", props()?.home ? undefined : { pane: a.pane });
     return moved;
   };
   const snooze = (a, at, cx) => {
     const seen = viewing(a);
-    view.setLabel("snoozed", a.address, String(at), cx);
-    view.remember("Snoozed", 1, (cx) => { wake(a, cx); if (seen) bringBack(a); }, cx);
+    const note = view.remember("Snoozed", 1, () => { wake(a, cx); if (seen) bringBack(a); }, cx);
+    view.setLabel("snoozed", a.address, String(at), cx, () => note.drop(1, cx));
     // The card moves away without a pointer-leave event, for it or for the clock under the pointer.
     view.napMenu = view.hovered = view.hot = null;
     detailsFor(view, null, cx);
